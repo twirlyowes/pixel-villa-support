@@ -291,7 +291,7 @@ require("./misc")(client);
 // Connect warn layout code passing down functions
 require("./warn")(client, { getWarnings, saveWarnings, hasModPermission, hierarchyCheck, sendLog });
 require("./autoresponder")(client);
-
+require("./voicesystem")(client);
 client.login(config.TOKEN);
 
 const express = require('express');
