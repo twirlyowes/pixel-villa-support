@@ -5,7 +5,7 @@ module.exports = (client) => {
         try {
             if (message.author.bot) return;
 
-            // Safety guard: Ignore messages with no text content (like images/embeds)
+            // Safety guard: Ignore messages with no text content
             if (!message.content) return;
 
             // Extract the first word of the message as the command
@@ -16,7 +16,7 @@ module.exports = (client) => {
             if (command !== "help") return;
 
             const helpEmbed = new EmbedBuilder()
-                .setColor("#5865F2") // Blurple
+                .setColor("#5865F2")
                 .setTitle("Pixel Villa Support")
                 .setDescription(
                     "Welcome to Pixel Villa Support!\n\n" +
