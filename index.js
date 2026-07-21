@@ -114,15 +114,14 @@ client.on("messageCreate", async (message) => {
     args = rawContent.slice(PREFIX.length).trim().split(/ +/);
     command = args.shift().toLowerCase();
   } else {
-    // Neither a prefix-less command nor a prefixed command
     return;
   }
 
   try {
     // 0. MINIGAMES HUB COMMAND (Requires Prefix: .minigames)
     if (command === "minigames") {
-      await hubCommand.execute(message);
-      return; // Stop processing further code block evaluations for this command
+      await hubCommand.execute(message, args);
+      return; 
     }
 
     // 0.5 EMERGENCY FORCE STOP COMMAND (Requires Prefix: .stopgame)
@@ -149,8 +148,8 @@ client.on("messageCreate", async (message) => {
     // 1. MUTE COMMAND (Requires Prefix)
     if (command === "mute") {
       const user = message.mentions.members.first();
-      const time = args[0];
-      const reason = args.slice(1).join(" ") || "No reason provided";
+      const time = args[1]; // args[0] is the mention, args[1] is the time duration
+      const reason = args.slice(2).join(" ") || "No reason provided";
 
       if (!user || !time || !ms(time)) {
         return message.reply({
@@ -288,16 +287,12 @@ require("./badwords")(client);
 require("./afk")(client);
 require("./role")(client);
 require("./mod")(client);
-require('./minigames/hub.js');
 require("./misc")(client);
-// Connect the brand new warn layout code passing down the newly non-blocking async functions
+// Connect warn layout code passing down functions
 require("./warn")(client, { getWarnings, saveWarnings, hasModPermission, hierarchyCheck, sendLog });
 require("./autoresponder")(client);
 
 client.login(config.TOKEN);
-
-
-
 
 const express = require('express');
 const app = express();
