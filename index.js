@@ -288,7 +288,7 @@ require("./badwords")(client);
 require("./afk")(client);
 require("./role")(client);
 require("./mod")(client);
-require("./minigames")(client);
+require('./minigames/hub.js');
 require("./misc")(client);
 // Connect the brand new warn layout code passing down the newly non-blocking async functions
 require("./warn")(client, { getWarnings, saveWarnings, hasModPermission, hierarchyCheck, sendLog });
