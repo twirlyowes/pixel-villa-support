@@ -1,4 +1,5 @@
-const { EmbedBuilder } = require("discord.js");
+                        "
+                        const { EmbedBuilder } = require("discord.js");
 
 module.exports = (client) => {
     client.on("messageCreate", async (message) => {
@@ -32,9 +33,9 @@ module.exports = (client) => {
                         "`.kick @user reason`\n" +
                         "`.ban @user reason`\n" +
                         "`.unban user ID`\n" +
-                        "`.nick @user [name]`\n" + // <-- Added today
-                        "`.lock`\n" +               // <-- Fixed backtick syntax error here
-                        "`.unlock`\n" +             // <-- Added today
+                        "`.nick @user [name]`\n" + 
+                        "`.lock`\n" +               
+                        "`.unlock`\n" +             
                         "`.wlist`\n" +
                         "`.wremove <id>`\n" +
                         "`.wreset @user`\n" +
@@ -52,16 +53,28 @@ module.exports = (client) => {
                         inline: false
                     },
                     {
-                        name: "Utility & Voice",
+                        name: "Utility",
                         value:
                         "`purge amount`\n" +
                         "`afk [reason]`\n" +
-                        "`ping`\n" +                 // <-- Added today
-                        "`uptime`\n" +               // <-- Added today
+                        "`ping`\n" +                 
+                        "`uptime`\n" +               
                         "`help`\n" +
-                        "`vcp`\n" +
                         "`ui [@user]`\n" +
                         "`si`",
+                        inline: false
+                    },
+                    {
+                        name: "Voice Master",
+                        value:
+                        "`vcp`\n" +
+                        "`vclock`\n" +
+                        "`vcunlock`\n" +
+                        "`vchide`\n" +
+                        "`vcunhide`\n" +
+                        "`vcname [room name]`\n" +
+                        "`vclimit [limit]`\n" +
+                        "`vckick @user`",
                         inline: false
                     }
                 )
