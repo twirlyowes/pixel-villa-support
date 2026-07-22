@@ -7,10 +7,13 @@ const {
 
 // CONFIGURATION: Set to your Join-to-Create voice channel ID
 const CREATE_CHANNEL_ID = "1522833037346214030"; 
-const TARGET_CATEGORY_ID = ""; // Optional: Category ID where temp VCs are created (leave empty to use the same category)
+const TARGET_CATEGORY_ID = ""; // Optional: Category ID where temp VCs are created
 
 // Active temporary channels tracker: Map<ChannelID, OwnerID>
 const activeTempChannels = new Map();
+
+// Cooldown tracker to prevent rapid spam tripping security bots
+const creationCooldowns = new Map();
 
 module.exports = (client) => {
 
@@ -21,6 +24,15 @@ module.exports = (client) => {
 
     // User joined the "Join to Create" channel
     if (newState.channelId === CREATE_CHANNEL_ID) {
+      // Basic rate limiting check (prevents rapid creation spam triggers)
+      const lastCreated = creationCooldowns.get(member.id) || 0;
+      const now = Date.now();
+      if (now - lastCreated < 7000) { // 7 seconds cooldown per user
+        try { await member.voice.setChannel(null); } catch (e) {}
+        return;
+      }
+      creationCooldowns.set(member.id, now);
+
       try {
         const guild = newState.guild;
         const channelName = `${member.user.username}'s Room`;
@@ -42,7 +54,8 @@ module.exports = (client) => {
                 PermissionsBitField.Flags.ManageChannels,
                 PermissionsBitField.Flags.MuteMembers,
                 PermissionsBitField.Flags.DeafenMembers,
-                PermissionsBitField.Flags.MoveMembers
+                PermissionsBitField.Flags.MoveMembers,
+                PermissionsBitField.Flags.ViewChannel
               ],
             },
           ],
@@ -51,6 +64,32 @@ module.exports = (client) => {
         // Move user into their newly created channel
         await member.voice.setChannel(tempChannel);
         activeTempChannels.set(tempChannel.id, member.id);
+
+        // Send Welcome Embed with Command List inside the new channel (if text-in-voice or general setup allows messaging)
+        const controlEmbed = new EmbedBuilder()
+          .setColor("#5865F2")
+          .setTitle("🎙️ Temporary Voice Control Panel")
+          .setDescription(`Welcome to your private room, ${member}! You are the **owner** of this channel.\n\nUse the commands below directly in chat to manage your room:`)
+          .addFields(
+            {
+              name: "Available Voice Commands",
+              value:
+              "`vclock` - Lock your room\n" +
+              "`vcunlock` - Unlock your room\n" +
+              "`vchide` - Hide your room\n" +
+              "`vcunhide` - Make your room visible\n" +
+              "`vcname [name]` - Rename your room\n" +
+              "`vclimit [number]` - Set user limit (0-99)\n" +
+              "`vcadd @user` - Allow/add a user to your room\n" +
+              "`vckick @user` - Kick a user from your room",
+              inline: false
+            }
+          )
+          .setFooter({ text: "Pixel Villa Voice Master System" })
+          .setTimestamp();
+
+        // Send message to the channel (Discord voice channels support text-in-voice)
+        await tempChannel.send({ content: `${member}`, embeds: [controlEmbed] });
 
       } catch (error) {
         console.error("Error creating temporary voice channel:", error);
@@ -71,7 +110,7 @@ module.exports = (client) => {
     }
   });
 
-  // 2. Handle Owner Customizations via Prefix-less Commands
+  // 2. Handle Owner Customizations & Commands
   client.on("messageCreate", async (message) => {
     if (message.author.bot || !message.guild) return;
 
@@ -119,7 +158,7 @@ module.exports = (client) => {
       return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription("👁️ Voice channel is now **visible**.")] });
     }
 
-    // RENAME COMMAND (vcname Room Name)
+    // RENAME COMMAND
     if (command === "vcname") {
       if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });
       const newName = args.join(" ");
@@ -129,7 +168,7 @@ module.exports = (client) => {
       return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription(`✏️ Channel renamed to **${newName}**.`)] });
     }
 
-    // USER LIMIT COMMAND (vclimit 3)
+    // USER LIMIT COMMAND
     if (command === "vclimit") {
       if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });
       const limit = parseInt(args[0], 10);
@@ -141,7 +180,22 @@ module.exports = (client) => {
       return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription(`👥 User limit set to **${limit === 0 ? "Unlimited" : limit}**.`)] });
     }
 
-    // KICK COMMAND (vckick @user)
+    // ADD / PERMIT COMMAND (`vcadd @user`)
+    if (command === "vcadd") {
+      if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });
+      const targetMember = message.mentions.members.first();
+      if (!targetMember) {
+        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("⚠️ Please mention a valid user to add to your channel.")] });
+      }
+
+      await memberChannel.permissionOverwrites.edit(targetMember.id, { 
+        Connect: true, 
+        ViewChannel: true 
+      });
+      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription(`✅ Added **${targetMember.user.tag}** to your channel permissions.`)] });
+    }
+
+    // KICK COMMAND
     if (command === "vckick") {
       if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });
       const targetMember = message.mentions.members.first();
