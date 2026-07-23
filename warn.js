@@ -1,8 +1,42 @@
+// Location: warn.js
 const { EmbedBuilder } = require("discord.js");
 const config = require("./config.json"); // Load config to read role and log channel IDs
 
-module.exports = (client, utils) => {
-  const { getWarnings, saveWarnings } = utils;
+// --- JSONBIN CONFIGURATION FOR WARNINGS ---
+const BIN_ID = "6a61af41f5f4af5e29b43bac";
+const API_KEY = "$2a$10$aCLBlkuqB51DVhDxNoqisureJOzr5ljUp6AyTncij4YryQSiAKPwa";
+// ------------------------------------------
+
+// Helper functions to fetch and save warnings from/to JSONBin
+async function getWarnings() {
+  try {
+    const response = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
+      headers: { "X-Master-Key": API_KEY }
+    });
+    const data = await response.json();
+    return data.record || {};
+  } catch (error) {
+    console.error("Failed to fetch warnings from JSONBin:", error);
+    return {};
+  }
+}
+
+async function saveWarnings(warnings) {
+  try {
+    await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Master-Key": API_KEY
+      },
+      body: JSON.stringify(warnings)
+    });
+  } catch (error) {
+    console.error("Failed to save warnings to JSONBin:", error);
+  }
+}
+
+module.exports = (client) => {
   const PREFIX = ".";
 
   function makeEmbed(color, text) {
