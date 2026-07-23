@@ -3,22 +3,13 @@ const { EmbedBuilder } = require("discord.js");
 const fs = require("fs").promises;
 const path = require("path");
 
-// CONFIGURATION: Specific staff role ID for this tracker
 const STAFF_ROLE_ID = "1511051007772069929"; 
-
-// CONFIGURATION: Managers only channel ID for daily report logs
 const LOG_CHANNEL_ID = "1527723455913660468"; 
-
-// Persistent file path for saving active time stats safely across restarts
 const ACTIVE_TIME_FILE = path.join(__dirname, "activetimes.json");
 
-// Active session tracker: Map<UserId, StartTimestamp>
 const activeSessions = new Map();
-
-// In-memory stats storage for the current day: Map<UserId, TotalTimeInMs>
 let dailyActiveTimes = new Map();
 
-// Safe async initialization for the JSON file
 (async () => {
   try {
     await fs.access(ACTIVE_TIME_FILE);
@@ -76,7 +67,6 @@ module.exports = (client) => {
     
     let targetUTC = new Date(now);
     targetUTC.setUTCHours(3, 0, 0, 0);
-    // Shift UTC time to IST 3:00 AM (Subtract 5 hours 30 minutes)
     targetUTC.setTime(targetUTC.getTime() - (5 * 60 + 30) * 60 * 1000);
 
     if (now >= targetUTC) {
@@ -172,7 +162,7 @@ module.exports = (client) => {
         dailyActiveTimes.set(userId, currentTotal + duration);
         
         activeSessions.delete(userId);
-        await saveTimesToFile(); // Save immediately when a session closes
+        await saveTimesToFile();
       }
     }
   });
@@ -188,7 +178,7 @@ module.exports = (client) => {
       const targetMember = message.mentions.members.first() || message.member;
 
       if (!isStaff(targetMember)) {
-        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("❌ That user is not a staff member or does not have the specified staff role.")] });
+        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("That user is not a staff member or does not have the specified staff role.")] });
       }
 
       const userId = targetMember.id;
@@ -210,7 +200,7 @@ module.exports = (client) => {
 
       const embed = new EmbedBuilder()
         .setColor("#5865F2")
-        .setTitle("⏱️ Staff Active Time Tracker (Today)")
+        .setTitle("Staff Active Time Tracker (Today)")
         .setDescription(`Active presence duration for staff **${targetMember.user.username}**:\n\n**${hours} hours, ${minutes} minutes, ${seconds} seconds**`)
         .setTimestamp();
 
