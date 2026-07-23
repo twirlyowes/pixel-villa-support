@@ -1,6 +1,7 @@
 // Location: activetime.js
 const { EmbedBuilder } = require("discord.js");
-const config = require("./config.json");
+const fs = require("fs").promises;
+const path = require("path");
 
 // CONFIGURATION: Specific staff role ID for this tracker
 const STAFF_ROLE_ID = "1511051007772069929"; 
@@ -8,11 +9,43 @@ const STAFF_ROLE_ID = "1511051007772069929";
 // CONFIGURATION: Managers only channel ID for daily report logs
 const LOG_CHANNEL_ID = "1527723455913660468"; 
 
+// Persistent file path for saving active time stats safely across restarts
+const ACTIVE_TIME_FILE = path.join(__dirname, "activetimes.json");
+
 // Active session tracker: Map<UserId, StartTimestamp>
 const activeSessions = new Map();
 
 // In-memory stats storage for the current day: Map<UserId, TotalTimeInMs>
-const dailyActiveTimes = new Map();
+let dailyActiveTimes = new Map();
+
+// Safe async initialization for the JSON file
+(async () => {
+  try {
+    await fs.access(ACTIVE_TIME_FILE);
+  } catch {
+    await fs.writeFile(ACTIVE_TIME_FILE, "{}", "utf8");
+  }
+})();
+
+async function loadSavedTimes() {
+  try {
+    const data = await fs.readFile(ACTIVE_TIME_FILE, "utf8");
+    const json = JSON.parse(data);
+    dailyActiveTimes = new Map(Object.entries(json).map(([k, v]) => [k, Number(v)]));
+  } catch (error) {
+    console.error("Error reading activetimes.json:", error);
+    dailyActiveTimes = new Map();
+  }
+}
+
+async function saveTimesToFile() {
+  try {
+    const obj = Object.fromEntries(dailyActiveTimes);
+    await fs.writeFile(ACTIVE_TIME_FILE, JSON.stringify(obj, null, 2), "utf8");
+  } catch (error) {
+    console.error("Error saving activetimes.json:", error);
+  }
+}
 
 module.exports = (client) => {
 
@@ -20,8 +53,10 @@ module.exports = (client) => {
     return member && member.roles && member.roles.cache.has(STAFF_ROLE_ID);
   };
 
-  client.on("ready", () => {
+  client.once("ready", async () => {
+    await loadSavedTimes();
     const now = Date.now();
+    
     client.guilds.cache.forEach(guild => {
       guild.members.cache.forEach(member => {
         if (!member.user.bot && isStaff(member)) {
@@ -44,7 +79,6 @@ module.exports = (client) => {
     // Shift UTC time to IST 3:00 AM (Subtract 5 hours 30 minutes)
     targetUTC.setTime(targetUTC.getTime() - (5 * 60 + 30) * 60 * 1000);
 
-    // If 3:00 AM IST has already passed today, target tomorrow's 3:00 AM IST
     if (now >= targetUTC) {
       targetUTC.setDate(targetUTC.getDate() + 1);
     }
@@ -60,13 +94,12 @@ module.exports = (client) => {
   }
 
   async function executeDailyRoutine(clientInstance) {
-    // Step 1: Send the report first while data is fully intact
     await sendDailyReport(clientInstance);
 
-    // Step 2: Wait 5 minutes (300,000 milliseconds) for safety before clearing the data
-    setTimeout(() => {
+    setTimeout(async () => {
       dailyActiveTimes.clear();
-      console.log("Daily active times data has been safely cleared 5 minutes after report generation.");
+      await saveTimesToFile();
+      console.log("Daily active times data has been safely cleared and saved to JSON 5 minutes after report generation.");
     }, 5 * 60 * 1000);
   }
 
@@ -114,7 +147,7 @@ module.exports = (client) => {
     }
   }
 
-  client.on("presenceUpdate", (oldPresence, newPresence) => {
+  client.on("presenceUpdate", async (oldPresence, newPresence) => {
     const member = newPresence.member;
     if (!member || member.user.bot || !isStaff(member)) return;
 
@@ -139,6 +172,7 @@ module.exports = (client) => {
         dailyActiveTimes.set(userId, currentTotal + duration);
         
         activeSessions.delete(userId);
+        await saveTimesToFile(); // Save immediately when a session closes
       }
     }
   });
@@ -163,7 +197,7 @@ module.exports = (client) => {
       if (activeSessions.has(userId)) {
         totalTime += (Date.now() - activeSessions.get(userId));
       } else {
-        const currentStatus = targetMember.presence ? targetManager.presence.status : "offline"; // Fixed variable safety
+        const currentStatus = targetMember.presence ? targetMember.presence.status : "offline";
         if (currentStatus !== "offline") {
           activeSessions.set(userId, Date.now());
         }
