@@ -24,7 +24,6 @@ module.exports = (client) => {
     const now = Date.now();
     client.guilds.cache.forEach(guild => {
       guild.members.cache.forEach(member => {
-        // Fix: Force fetch/check member's cached presence safely
         if (!member.user.bot && isStaff(member)) {
           const status = member.presence ? member.presence.status : "offline";
           if (status !== "offline") {
@@ -34,27 +33,41 @@ module.exports = (client) => {
       });
     });
 
-    scheduleDailyReset(client);
+    scheduleDailyReport(client);
   });
 
-  function scheduleDailyReset(clientInstance) {
+  function scheduleDailyReport(clientInstance) {
     const now = new Date();
-    const target = new Date();
     
-    target.setHours(3, 0, 0, 0);
+    let targetUTC = new Date(now);
+    targetUTC.setUTCHours(3, 0, 0, 0);
+    // Shift UTC time to IST 3:00 AM (Subtract 5 hours 30 minutes)
+    targetUTC.setTime(targetUTC.getTime() - (5 * 60 + 30) * 60 * 1000);
 
-    if (now >= target) {
-      target.setDate(target.getDate() + 1);
+    // If 3:00 AM IST has already passed today, target tomorrow's 3:00 AM IST
+    if (now >= targetUTC) {
+      targetUTC.setDate(targetUTC.getDate() + 1);
     }
 
-    const timeUntilTarget = target.getTime() - now.getTime();
+    const timeUntilTarget = targetUTC.getTime() - now.getTime();
 
     setTimeout(() => {
-      sendDailyReport(clientInstance);
+      executeDailyRoutine(clientInstance);
       setInterval(() => {
-        sendDailyReport(clientInstance);
+        executeDailyRoutine(clientInstance);
       }, 24 * 60 * 60 * 1000);
     }, timeUntilTarget);
+  }
+
+  async function executeDailyRoutine(clientInstance) {
+    // Step 1: Send the report first while data is fully intact
+    await sendDailyReport(clientInstance);
+
+    // Step 2: Wait 5 minutes (300,000 milliseconds) for safety before clearing the data
+    setTimeout(() => {
+      dailyActiveTimes.clear();
+      console.log("Daily active times data has been safely cleared 5 minutes after report generation.");
+    }, 5 * 60 * 1000);
   }
 
   async function sendDailyReport(clientInstance) {
@@ -65,7 +78,7 @@ module.exports = (client) => {
 
       const embed = new EmbedBuilder()
         .setColor("#5865F2")
-        .setTitle("📊 Daily Staff Activity Report (3:00 AM Reset)")
+        .setTitle("📊 Daily Staff Activity Report (3:00 AM IST)")
         .setDescription("Here is the total active online time recorded for staff members over the past 24 hours:")
         .setTimestamp();
 
@@ -96,14 +109,11 @@ module.exports = (client) => {
 
       embed.addFields({ name: "Staff Durations", value: reportText, inline: false });
       await channel.send({ embeds: [embed] });
-
-      dailyActiveTimes.clear();
     } catch (err) {
       console.error("Error sending daily staff activity report:", err);
     }
   }
 
-  // 1. Track presence updates (Online / Idle / DND) specifically for Staff
   client.on("presenceUpdate", (oldPresence, newPresence) => {
     const member = newPresence.member;
     if (!member || member.user.bot || !isStaff(member)) return;
@@ -133,7 +143,6 @@ module.exports = (client) => {
     }
   });
 
-  // 2. Command to check staff active time manually (`activetime`)
   client.on("messageCreate", async (message) => {
     if (message.author.bot || !message.guild) return;
 
@@ -151,12 +160,10 @@ module.exports = (client) => {
       const userId = targetMember.id;
       let totalTime = dailyActiveTimes.get(userId) || 0;
       
-      // If they are currently active, add the current ongoing chunk to the display total
       if (activeSessions.has(userId)) {
         totalTime += (Date.now() - activeSessions.get(userId));
       } else {
-        // Fallback safety check: If they are online right now but session wasn't captured, count from message time
-        const currentStatus = targetMember.presence ? targetMember.presence.status : "offline";
+        const currentStatus = targetMember.presence ? targetManager.presence.status : "offline"; // Fixed variable safety
         if (currentStatus !== "offline") {
           activeSessions.set(userId, Date.now());
         }
