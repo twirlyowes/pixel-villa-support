@@ -1,29 +1,40 @@
+// Location: afk.js
 const { EmbedBuilder } = require("discord.js");
-const fs = require("fs");                         
-const path = require("path");
-const afkFile = path.join(__dirname, "afk.json"); 
+
+// --- JSONBIN CONFIGURATION FOR AFK ---
+const BIN_ID = "6a61ad17da38895dfe82b608";
+const API_KEY = "$2a$10$aCLBlkuqB51DVhDxNoqisureJOzr5ljUp6AyTncij4YryQSiAKPwa";
+// -------------------------------------
+
 let afkData = new Map();                                                                            
 
-function loadAFK() {
+async function loadAFK() {
     try {
-        if (!fs.existsSync(afkFile)) {
-            fs.writeFileSync(afkFile, "{}", "utf8");
-            return;                                       
-        }
-        const raw = fs.readFileSync(afkFile, "utf8");                                                       
-        const parsed = JSON.parse(raw || "{}");
+        const response = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
+            headers: { "X-Master-Key": API_KEY }
+        });
+        const data = await response.json();
+        const parsed = data.record || {};
         afkData = new Map(Object.entries(parsed));    
     } catch (error) {                                     
-        console.error("Failed to load AFK database:", error);
+        console.error("Failed to load AFK database from JSONBin:", error);
+        afkData = new Map();
     }                                             
 }
 
-function saveAFK() {                                  
+async function saveAFK() {                                  
     try {                                                 
         const obj = Object.fromEntries(afkData);
-        fs.writeFileSync(afkFile, JSON.stringify(obj, null, 4), "utf8");
+        await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}`, {
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json",
+                "X-Master-Key": API_KEY
+            },
+            body: JSON.stringify(obj)
+        });
     } catch (error) {                                     
-        console.error("Failed to save AFK database:", error);
+        console.error("Failed to save AFK database to JSONBin:", error);
     }
 }                                                 
 
@@ -98,7 +109,7 @@ module.exports = (client) => {
                     time,                                             
                     setupAt: time
                 });                                               
-                saveAFK();
+                await saveAFK();
 
                 const embed = new EmbedBuilder()
                     .setColor("#f1c40f") // Yellow                    
@@ -128,7 +139,7 @@ module.exports = (client) => {
                     const duration = formatDuration(Date.now() - data.time);
 
                     afkData.delete(message.author.id);
-                    saveAFK();                                                                                          
+                    await saveAFK();                                                                                          
                     
                     const embed = new EmbedBuilder()                                                                        
                         .setColor("#2ecc71") // Green                                                                       
