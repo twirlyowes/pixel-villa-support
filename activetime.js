@@ -1,30 +1,27 @@
 // Location: activetime.js
 const { EmbedBuilder } = require("discord.js");
-const fs = require("fs").promises;
-const path = require("path");
 
 const STAFF_ROLE_ID = "1511051007772069929"; 
 const LOG_CHANNEL_ID = "1527723455913660468"; 
-const ACTIVE_TIME_FILE = path.join(__dirname, "activetimes.json");
+
+// --- JSONBIN CONFIGURATION ---
+const BIN_ID = "6a61ab71da38895dfe82b0cc";
+const API_KEY = "$2a$10$aCLBlkuqB51DVhDxNoqisureJOzr5ljUp6AyTncij4YryQSiAKPwa";
+// -----------------------------
 
 const activeSessions = new Map();
 let dailyActiveTimes = new Map();
 
-(async () => {
-  try {
-    await fs.access(ACTIVE_TIME_FILE);
-  } catch {
-    await fs.writeFile(ACTIVE_TIME_FILE, "{}", "utf8");
-  }
-})();
-
 async function loadSavedTimes() {
   try {
-    const data = await fs.readFile(ACTIVE_TIME_FILE, "utf8");
-    const json = JSON.parse(data);
+    const response = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
+      headers: { "X-Master-Key": API_KEY }
+    });
+    const data = await response.json();
+    const json = data.record || {};
     dailyActiveTimes = new Map(Object.entries(json).map(([k, v]) => [k, Number(v)]));
   } catch (error) {
-    console.error("Error reading activetimes.json:", error);
+    console.error("Error reading from JSONBin:", error);
     dailyActiveTimes = new Map();
   }
 }
@@ -32,14 +29,20 @@ async function loadSavedTimes() {
 async function saveTimesToFile() {
   try {
     const obj = Object.fromEntries(dailyActiveTimes);
-    await fs.writeFile(ACTIVE_TIME_FILE, JSON.stringify(obj, null, 2), "utf8");
+    await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Master-Key": API_KEY
+      },
+      body: JSON.stringify(obj)
+    });
   } catch (error) {
-    console.error("Error saving activetimes.json:", error);
+    console.error("Error saving to JSONBin:", error);
   }
 }
 
 module.exports = (client) => {
-
   const isStaff = (member) => {
     return member && member.roles && member.roles.cache.has(STAFF_ROLE_ID);
   };
@@ -64,7 +67,6 @@ module.exports = (client) => {
 
   function scheduleDailyReport(clientInstance) {
     const now = new Date();
-    
     let targetUTC = new Date(now);
     targetUTC.setUTCHours(3, 0, 0, 0);
     targetUTC.setTime(targetUTC.getTime() - (5 * 60 + 30) * 60 * 1000);
@@ -89,7 +91,7 @@ module.exports = (client) => {
     setTimeout(async () => {
       dailyActiveTimes.clear();
       await saveTimesToFile();
-      console.log("Daily active times data has been safely cleared and saved to JSON 5 minutes after report generation.");
+      console.log("Daily active times data has been safely cleared and saved to JSONBin 5 minutes after report.");
     }, 5 * 60 * 1000);
   }
 
@@ -101,12 +103,11 @@ module.exports = (client) => {
 
       const embed = new EmbedBuilder()
         .setColor("#5865F2")
-        .setTitle("📊 Daily Staff Activity Report (3:00 AM IST)")
+        .setTitle("Daily Staff Activity Report (3:00 AM IST)")
         .setDescription("Here is the total active online time recorded for staff members over the past 24 hours:")
         .setTimestamp();
 
       let reportText = "";
-
       const now = Date.now();
       for (const [userId, startTime] of activeSessions.entries()) {
         const duration = now - startTime;
@@ -132,6 +133,7 @@ module.exports = (client) => {
 
       embed.addFields({ name: "Staff Durations", value: reportText, inline: false });
       await channel.send({ embeds: [embed] });
+      await saveTimesToFile();
     } catch (err) {
       console.error("Error sending daily staff activity report:", err);
     }
