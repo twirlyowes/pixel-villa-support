@@ -24,25 +24,25 @@ module.exports = (client) => {
     const now = Date.now();
     client.guilds.cache.forEach(guild => {
       guild.members.cache.forEach(member => {
-        if (!member.user.bot && isStaff(member) && member.presence && member.presence.status !== "offline") {
-          activeSessions.set(member.id, now);
+        // Fix: Force fetch/check member's cached presence safely
+        if (!member.user.bot && isStaff(member)) {
+          const status = member.presence ? member.presence.status : "offline";
+          if (status !== "offline") {
+            activeSessions.set(member.id, now);
+          }
         }
       });
     });
 
-    // Schedule the report to trigger specifically at 3:00 AM every day
     scheduleDailyReset(client);
   });
 
-  // Function to calculate time remaining until the next 3:00 AM and schedule it
   function scheduleDailyReset(clientInstance) {
     const now = new Date();
     const target = new Date();
     
-    // Set target time to 3:00 AM
     target.setHours(3, 0, 0, 0);
 
-    // If it's already past 3:00 AM today, schedule it for 3:00 AM tomorrow
     if (now >= target) {
       target.setDate(target.getDate() + 1);
     }
@@ -51,14 +51,12 @@ module.exports = (client) => {
 
     setTimeout(() => {
       sendDailyReport(clientInstance);
-      // After it runs, set a recurring 24-hour interval for every subsequent day at 3:00 AM
       setInterval(() => {
         sendDailyReport(clientInstance);
       }, 24 * 60 * 60 * 1000);
     }, timeUntilTarget);
   }
 
-  // Function to compile and auto-send daily report without tagging
   async function sendDailyReport(clientInstance) {
     try {
       const guild = clientInstance.guilds.cache.first();
@@ -112,7 +110,7 @@ module.exports = (client) => {
 
     const userId = member.id;
     const oldStatus = oldPresence ? oldPresence.status : "offline";
-    const newStatus = newPresence.status;
+    const newStatus = newPresence ? newPresence.status : "offline";
 
     const isNowActive = newStatus !== "offline";
     const wasActive = oldStatus !== "offline";
@@ -153,8 +151,15 @@ module.exports = (client) => {
       const userId = targetMember.id;
       let totalTime = dailyActiveTimes.get(userId) || 0;
       
+      // If they are currently active, add the current ongoing chunk to the display total
       if (activeSessions.has(userId)) {
         totalTime += (Date.now() - activeSessions.get(userId));
+      } else {
+        // Fallback safety check: If they are online right now but session wasn't captured, count from message time
+        const currentStatus = targetMember.presence ? targetMember.presence.status : "offline";
+        if (currentStatus !== "offline") {
+          activeSessions.set(userId, Date.now());
+        }
       }
 
       const totalSeconds = Math.floor(totalTime / 1000);
