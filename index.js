@@ -292,6 +292,7 @@ require("./misc")(client);
 require("./warn")(client, { getWarnings, saveWarnings, hasModPermission, hierarchyCheck, sendLog });
 require("./autoresponder")(client);
 require("./voicesystem")(client);
+require("./activetime")(client);
 client.login(config.TOKEN);
 
 const express = require('express');
