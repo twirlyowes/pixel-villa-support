@@ -21,6 +21,9 @@ const client = new Client({
   ]
 });
 
+// Fix: Increase max listeners to prevent the memory leak warning since multiple modules attach messageCreate/presence listeners
+client.setMaxListeners(20);
+
 const PREFIX = ".";
 const WARN_FILE = path.join(__dirname, "warnings.json");
 
@@ -230,7 +233,6 @@ client.on("messageCreate", async (message) => {
         });
       }
 
-      // Delete the command invocation message plus the specified count
       await message.delete().catch(() => {});
       await message.channel.bulkDelete(amount, true);
 
