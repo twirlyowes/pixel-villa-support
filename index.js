@@ -15,7 +15,9 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildVoiceStates
+    GatewayIntentBits.GuildVoiceStates,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildPresences
   ]
 });
 
@@ -196,6 +198,12 @@ client.on("messageCreate", async (message) => {
         });
       }
 
+      if (!user.isCommunicationDisabled()) {
+        return message.reply({
+          embeds: [makeEmbed("Red", "That user is not currently muted.")]
+        });
+      }
+
       await user.timeout(null);
 
       const embed = makeEmbed(
@@ -222,6 +230,8 @@ client.on("messageCreate", async (message) => {
         });
       }
 
+      // Delete the command invocation message plus the specified count
+      await message.delete().catch(() => {});
       await message.channel.bulkDelete(amount, true);
 
       const embed = makeEmbed(
