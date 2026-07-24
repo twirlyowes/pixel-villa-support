@@ -142,7 +142,13 @@ module.exports = (client) => {
       }
 
       await message.delete().catch(() => {});
-      return message.channel.send(text);
+
+      const sayEmbed = new EmbedBuilder()
+        .setColor("#5865F2")
+        .setDescription(text)
+        .setTimestamp();
+
+      return message.channel.send({ embeds: [sayEmbed] });
     }
 
     // 7. calculate (no prefix)
