@@ -51,8 +51,8 @@ module.exports = (client) => {
     await loadSavedTimes();
     const now = Date.now();
     
+    // Skip heavy cache-wide member fetching to eliminate CPU spikes/lags
     for (const guild of client.guilds.cache.values()) {
-      await guild.members.fetch().catch(() => {});
       guild.members.cache.forEach(member => {
         if (!member.user.bot && isStaff(member)) {
           const status = member.presence ? member.presence.status : "offline";
@@ -64,6 +64,20 @@ module.exports = (client) => {
     }
 
     scheduleDailyReport(client);
+
+    // Auto-update JSONBin every 5 minutes asynchronously without blocking loops
+    setInterval(async () => {
+      // Accumulate live session increments before backing up
+      const currentTimestamp = Date.now();
+      for (const [userId, startTime] of activeSessions.entries()) {
+        const duration = currentTimestamp - startTime;
+        const currentTotal = dailyActiveTimes.get(userId) || 0;
+        dailyActiveTimes.set(userId, currentTotal + duration);
+        activeSessions.set(userId, currentTimestamp);
+      }
+      await saveTimesToFile();
+      console.log("Auto-synced active staff times to JSONBin (5-minute interval).");
+    }, 5 * 60 * 1000);
   });
 
   function scheduleDailyReport(clientInstance) {
@@ -121,12 +135,12 @@ module.exports = (client) => {
       if (dailyActiveTimes.size === 0) {
         reportText = "No active staff time recorded today.";
       } else {
-        await guild.members.fetch().catch(() => {});
         for (const [userId, totalTime] of dailyActiveTimes.entries()) {
           const totalSeconds = Math.floor(totalTime / 1000);
           const hours = Math.floor(totalSeconds / 3600);
           const minutes = Math.floor((totalSeconds % 3600) / 60);
           
+          // Lazy fetch individual member safely without cache blocking
           const member = guild.members.cache.get(userId) || await guild.members.fetch(userId).catch(() => null);
           const name = member ? member.user.username : "Unknown User";
 
@@ -170,7 +184,8 @@ module.exports = (client) => {
         dailyActiveTimes.set(userId, currentTotal + duration);
         
         activeSessions.delete(userId);
-        await saveTimesToFile();
+        // Do not force-await HTTP save on every single status toggle to avoid latency lag
+        saveTimesToFile();
       }
     }
   });
@@ -185,7 +200,7 @@ module.exports = (client) => {
     // FORCE LOG COMMAND: atlogs (No prefix, Administrator only)
     if (command === "atlogs") {
       if (!message.member.permissions.has("Administrator")) {
-        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("❌ You need Administrator permissions to force-log staff activity.")] });
+        return message.reply({ embeds: [new EmbedBuilder().setColor("Red"].setDescription("❌ You need Administrator permissions to force-log staff activity.")] });
       }
       await message.reply("🔄 Generating and sending the staff activity report now...");
       await sendDailyReport(message.guild);
@@ -197,7 +212,6 @@ module.exports = (client) => {
 
       if (!targetMember && words.length > 0) {
         const query = words.join(" ").toLowerCase();
-        await message.guild.members.fetch().catch(() => {});
         targetMember = message.guild.members.cache.find(m => 
           m.user.username.toLowerCase().includes(query) || 
           (m.nickname && m.nickname.toLowerCase().includes(query))
@@ -209,7 +223,7 @@ module.exports = (client) => {
       }
 
       if (!isStaff(targetMember)) {
-        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("That user is not a staff member or does not have the specified staff role.")] });
+        return message.reply({ embeds: [new EmbedBuilder().setColor("Red"].setDescription("That user is not a staff member or does not have the specified staff role.")] });
       }
 
       const userId = targetMember.id;
