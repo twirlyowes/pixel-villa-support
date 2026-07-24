@@ -64,9 +64,11 @@ module.exports = (client) => {
       }
 
       try {
+        const headers = { "User-Agent": "PixelVillaBot/1.0 (DiscordBot)" };
+
         // Step 1: Search Wikipedia to get the best matching page title
         const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json`;
-        const searchRes = await axios.get(searchUrl);
+        const searchRes = await axios.get(searchUrl, { headers });
         const searchResults = searchRes.data?.query?.search;
 
         if (!searchResults || searchResults.length === 0) {
@@ -78,7 +80,7 @@ module.exports = (client) => {
 
         // Step 2: Fetch the summary using the correct page title
         const summaryUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(pageTitle)}`;
-        const res = await axios.get(summaryUrl);
+        const res = await axios.get(summaryUrl, { headers });
         const data = res.data;
 
         const embed = new EmbedBuilder()
