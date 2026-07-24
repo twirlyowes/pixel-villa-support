@@ -39,7 +39,12 @@ module.exports = (client) => {
                         "`.wremove <id>`\n" +
                         "`.wreset @user`\n" +
                         "`.sticky [message]`\n" +
-                        "`.sticky off`",
+                        "`.sticky off`\n" +
+                        "`.dm @user [message]`\n" +
+                        "`.hide`\n" +
+                        "`.unhide`\n" +
+                        "`.say [message]`\n" +
+                        "`.botinfo`",
                         inline: false
                     },
                     {
@@ -60,7 +65,9 @@ module.exports = (client) => {
                         "`uptime`\n" +               
                         "`help`\n" +
                         "`ui [@user]`\n" +
-                        "`si`",
+                        "`si`\n" +
+                        "`wiki [query]`\n" +
+                        "`calculate [expression]`",
                         inline: false
                     },
                     {
