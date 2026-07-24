@@ -51,7 +51,6 @@ module.exports = (client) => {
     await loadSavedTimes();
     const now = Date.now();
     
-    // Skip heavy cache-wide member fetching to eliminate CPU spikes/lags
     for (const guild of client.guilds.cache.values()) {
       guild.members.cache.forEach(member => {
         if (!member.user.bot && isStaff(member)) {
@@ -65,9 +64,7 @@ module.exports = (client) => {
 
     scheduleDailyReport(client);
 
-    // Auto-update JSONBin every 5 minutes asynchronously without blocking loops
     setInterval(async () => {
-      // Accumulate live session increments before backing up
       const currentTimestamp = Date.now();
       for (const [userId, startTime] of activeSessions.entries()) {
         const duration = currentTimestamp - startTime;
@@ -140,7 +137,6 @@ module.exports = (client) => {
           const hours = Math.floor(totalSeconds / 3600);
           const minutes = Math.floor((totalSeconds % 3600) / 60);
           
-          // Lazy fetch individual member safely without cache blocking
           const member = guild.members.cache.get(userId) || await guild.members.fetch(userId).catch(() => null);
           const name = member ? member.user.username : "Unknown User";
 
@@ -184,7 +180,6 @@ module.exports = (client) => {
         dailyActiveTimes.set(userId, currentTotal + duration);
         
         activeSessions.delete(userId);
-        // Do not force-await HTTP save on every single status toggle to avoid latency lag
         saveTimesToFile();
       }
     }
@@ -200,7 +195,7 @@ module.exports = (client) => {
     // FORCE LOG COMMAND: atlogs (No prefix, Administrator only)
     if (command === "atlogs") {
       if (!message.member.permissions.has("Administrator")) {
-        return message.reply({ embeds: [new EmbedBuilder().setColor("Red"].setDescription("❌ You need Administrator permissions to force-log staff activity.")] });
+        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("❌ You need Administrator permissions to force-log staff activity.")] });
       }
       await message.reply("🔄 Generating and sending the staff activity report now...");
       await sendDailyReport(message.guild);
@@ -223,7 +218,7 @@ module.exports = (client) => {
       }
 
       if (!isStaff(targetMember)) {
-        return message.reply({ embeds: [new EmbedBuilder().setColor("Red"].setDescription("That user is not a staff member or does not have the specified staff role.")] });
+        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("That user is not a staff member or does not have the specified staff role.")] });
       }
 
       const userId = targetMember.id;
@@ -244,7 +239,7 @@ module.exports = (client) => {
       const seconds = totalSeconds % 60;
 
       const embed = new EmbedBuilder()
-        .setColor("#5865F2")
+        .setColor("Blue")
         .setTitle("Staff Active Time Tracker (Today)")
         .setDescription(`Active presence duration for staff **${targetMember.user.username}**:\n\n**${hours} hours, ${minutes} minutes, ${seconds} seconds**`)
         .setTimestamp();
