@@ -112,7 +112,7 @@ module.exports = (client) => {
 
       try {
         await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, { ViewChannel: null });
-        await message.reply({ embeds: [new EmbedBuilder().setColor("Green"].setDescription("🔓 This channel is now visible to regular members.")] });
+        await message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription("🔓 This channel is now visible to regular members.")] });
       } catch (err) {
         await message.reply("❌ Failed to unhide the channel.");
       }
@@ -122,7 +122,7 @@ module.exports = (client) => {
     // 6. .say
     if (command === ".say") {
       if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
-        return message.reply({ embeds: [new EmbedBuilder().setColor("Red"].setDescription("❌ You need Manage Messages permission to use .say.")] });
+        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("❌ You need Manage Messages permission to use .say.")] });
       }
 
       const text = words.join(" ");
