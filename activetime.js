@@ -2,7 +2,7 @@
 const { EmbedBuilder } = require("discord.js");
 
 const STAFF_ROLE_ID = "1511051007772069929"; 
-const LOG_CHANNEL_ID = "1527723455913660468"; 
+const LOG_CHANNEL_ID = "1523648445276098680"; 
 
 // --- JSONBIN CONFIGURATION ---
 const BIN_ID = "6a61ab71da38895dfe82b0cc";
@@ -51,7 +51,8 @@ module.exports = (client) => {
     await loadSavedTimes();
     const now = Date.now();
     
-    client.guilds.cache.forEach(guild => {
+    for (const guild of client.guilds.cache.values()) {
+      await guild.members.fetch().catch(() => {});
       guild.members.cache.forEach(member => {
         if (!member.user.bot && isStaff(member)) {
           const status = member.presence ? member.presence.status : "offline";
@@ -60,7 +61,7 @@ module.exports = (client) => {
           }
         }
       });
-    });
+    }
 
     scheduleDailyReport(client);
   });
@@ -86,7 +87,8 @@ module.exports = (client) => {
   }
 
   async function executeDailyRoutine(clientInstance) {
-    await sendDailyReport(clientInstance);
+    const guild = clientInstance.guilds.cache.first();
+    if (guild) await sendDailyReport(guild);
 
     setTimeout(async () => {
       dailyActiveTimes.clear();
@@ -95,19 +97,11 @@ module.exports = (client) => {
     }, 5 * 60 * 1000);
   }
 
-  async function sendDailyReport(clientInstance) {
+  async function sendDailyReport(guild) {
     try {
-      const guild = clientInstance.guilds.cache.first();
-      const channel = await clientInstance.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
-      if (!channel || !guild) return;
+      const channel = await guild.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
+      if (!channel) return;
 
-      const embed = new EmbedBuilder()
-        .setColor("#5865F2")
-        .setTitle("Daily Staff Activity Report (3:00 AM IST)")
-        .setDescription("Here is the total active online time recorded for staff members over the past 24 hours:")
-        .setTimestamp();
-
-      let reportText = "";
       const now = Date.now();
       for (const [userId, startTime] of activeSessions.entries()) {
         const duration = now - startTime;
@@ -116,22 +110,34 @@ module.exports = (client) => {
         activeSessions.set(userId, now);
       }
 
+      const embed = new EmbedBuilder()
+        .setColor("#5865F2")
+        .setTitle("Daily Staff Activity Report (3:00 AM IST)")
+        .setDescription("Here is the total active online time recorded for staff members over the past 24 hours:")
+        .setTimestamp();
+
+      let reportText = "";
+
       if (dailyActiveTimes.size === 0) {
         reportText = "No active staff time recorded today.";
       } else {
+        await guild.members.fetch().catch(() => {});
         for (const [userId, totalTime] of dailyActiveTimes.entries()) {
           const totalSeconds = Math.floor(totalTime / 1000);
           const hours = Math.floor(totalSeconds / 3600);
           const minutes = Math.floor((totalSeconds % 3600) / 60);
           
-          const member = await guild.members.fetch(userId).catch(() => null);
+          const member = guild.members.cache.get(userId) || await guild.members.fetch(userId).catch(() => null);
           const name = member ? member.user.username : "Unknown User";
 
           reportText += `**${name}**: **${hours}h ${minutes}m**\n`;
         }
       }
 
+      if (!reportText) reportText = "No active staff time recorded today.";
+
       embed.addFields({ name: "Staff Durations", value: reportText, inline: false });
+      
       await channel.send({ embeds: [embed] });
       await saveTimesToFile();
     } catch (err) {
@@ -174,10 +180,33 @@ module.exports = (client) => {
 
     const rawContent = message.content.trim();
     const words = rawContent.split(/ +/);
-    const command = words[0].toLowerCase();
+    const command = words.shift().toLowerCase();
+
+    // FORCE LOG COMMAND: atlogs (No prefix, Administrator only)
+    if (command === "atlogs") {
+      if (!message.member.permissions.has("Administrator")) {
+        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("❌ You need Administrator permissions to force-log staff activity.")] });
+      }
+      await message.reply("🔄 Generating and sending the staff activity report now...");
+      await sendDailyReport(message.guild);
+      return;
+    }
 
     if (command === "activetime") {
-      const targetMember = message.mentions.members.first() || message.member;
+      let targetMember = message.mentions.members.first();
+
+      if (!targetMember && words.length > 0) {
+        const query = words.join(" ").toLowerCase();
+        await message.guild.members.fetch().catch(() => {});
+        targetMember = message.guild.members.cache.find(m => 
+          m.user.username.toLowerCase().includes(query) || 
+          (m.nickname && m.nickname.toLowerCase().includes(query))
+        );
+      }
+
+      if (!targetMember) {
+        targetMember = message.member;
+      }
 
       if (!isStaff(targetMember)) {
         return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("That user is not a staff member or does not have the specified staff role.")] });
