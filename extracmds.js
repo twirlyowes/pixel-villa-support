@@ -64,18 +64,27 @@ module.exports = (client) => {
       }
 
       try {
-        const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`;
-        const res = await axios.get(url);
-        const data = res.data;
+        // Step 1: Search Wikipedia to get the best matching page title
+        const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json`;
+        const searchRes = await axios.get(searchUrl);
+        const searchResults = searchRes.data?.query?.search;
 
-        if (data.type === "disambiguation") {
-          return message.reply(`⚠️ "${query}" may refer to multiple topics. Please be more specific.`);
+        if (!searchResults || searchResults.length === 0) {
+          return message.reply("❌ Could not find a Wikipedia page matching that query.");
         }
+
+        // Get the top matching page title
+        const pageTitle = searchResults[0].title;
+
+        // Step 2: Fetch the summary using the correct page title
+        const summaryUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(pageTitle)}`;
+        const res = await axios.get(summaryUrl);
+        const data = res.data;
 
         const embed = new EmbedBuilder()
           .setColor("#FFFFFF")
-          .setTitle(data.title || "Wikipedia Search")
-          .setURL(data.content_urls?.desktop?.page || "https://en.wikipedia.org")
+          .setTitle(data.title || pageTitle)
+          .setURL(data.content_urls?.desktop?.page || `https://en.wikipedia.org/wiki/${encodeURIComponent(pageTitle)}`)
           .setDescription(data.extract || "No summary available.")
           .setFooter({ text: "Provided by Wikipedia" });
 
@@ -85,7 +94,7 @@ module.exports = (client) => {
 
         return message.reply({ embeds: [embed] });
       } catch (err) {
-        return message.reply("❌ Could not find a Wikipedia page matching that query.");
+        return message.reply("❌ An error occurred while searching Wikipedia.");
       }
     }
 
