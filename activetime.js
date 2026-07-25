@@ -62,8 +62,10 @@ module.exports = (client) => {
       });
     }
 
-    scheduleDailyReport(client);
+    // Reliable clock checker for 3:00 AM IST report
+    startClockChecker(client);
 
+    // Auto-update JSONBin every 5 minutes asynchronously without blocking loops
     setInterval(async () => {
       const currentTimestamp = Date.now();
       for (const [userId, startTime] of activeSessions.entries()) {
@@ -77,35 +79,33 @@ module.exports = (client) => {
     }, 5 * 60 * 1000);
   });
 
-  function scheduleDailyReport(clientInstance) {
-    const now = new Date();
-    let targetUTC = new Date(now);
-    targetUTC.setUTCHours(3, 0, 0, 0);
-    targetUTC.setTime(targetUTC.getTime() - (5 * 60 + 30) * 60 * 1000);
+  function startClockChecker(clientInstance) {
+    let lastLoggedDate = "";
 
-    if (now >= targetUTC) {
-      targetUTC.setDate(targetUTC.getDate() + 1);
-    }
+    setInterval(async () => {
+      const now = new Date();
+      const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+      const istDate = new Date(utc + (3600000 * 5.5));
 
-    const timeUntilTarget = targetUTC.getTime() - now.getTime();
+      const hours = istDate.getHours();
+      const minutes = istDate.getMinutes();
+      const currentDateString = istDate.toISOString().split("T")[0];
 
-    setTimeout(() => {
-      executeDailyRoutine(clientInstance);
-      setInterval(() => {
-        executeDailyRoutine(clientInstance);
-      }, 24 * 60 * 60 * 1000);
-    }, timeUntilTarget);
-  }
-
-  async function executeDailyRoutine(clientInstance) {
-    const guild = clientInstance.guilds.cache.first();
-    if (guild) await sendDailyReport(guild);
-
-    setTimeout(async () => {
-      dailyActiveTimes.clear();
-      await saveTimesToFile();
-      console.log("Daily active times data has been safely cleared and saved to JSONBin 5 minutes after report.");
-    }, 5 * 60 * 1000);
+      if (hours === 3 && minutes === 0 && lastLoggedDate !== currentDateString) {
+        lastLoggedDate = currentDateString;
+        
+        const guild = clientInstance.guilds.cache.first();
+        if (guild) {
+          await sendDailyReport(guild);
+          
+          setTimeout(async () => {
+            dailyActiveTimes.clear();
+            await saveTimesToFile();
+            console.log("Daily active times data has been safely cleared and saved to JSONBin 5 minutes after report.");
+          }, 5 * 60 * 1000);
+        }
+      }
+    }, 60 * 1000);
   }
 
   async function sendDailyReport(guild) {
@@ -218,7 +218,7 @@ module.exports = (client) => {
       }
 
       if (!isStaff(targetMember)) {
-        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("That user is not a staff member or does not have the specified staff role.")] });
+        return message.reply({ embeds: [new EmbedBuilder().setColor("Red"].setDescription("That user is not a staff member or does not have the specified staff role.")] });
       }
 
       const userId = targetMember.id;
@@ -239,7 +239,7 @@ module.exports = (client) => {
       const seconds = totalSeconds % 60;
 
       const embed = new EmbedBuilder()
-        .setColor("Blue")
+        .setColor("#5865F2")
         .setTitle("Staff Active Time Tracker (Today)")
         .setDescription(`Active presence duration for staff **${targetMember.user.username}**:\n\n**${hours} hours, ${minutes} minutes, ${seconds} seconds**`)
         .setTimestamp();
