@@ -20,8 +20,8 @@ const {
 const VERIFY_CHANNEL_ID = '1522850335415078922'; // Updated verification channel ID
 const LOG_CHANNEL_ID = '1510632065622741029';     // Updated log channel ID
 
-const VERIFIED_ROLE_ID = '';   // Optional: Leave empty to find by name 'Verified' or set ID
-const UNVERIFIED_ROLE_ID = ''; // Optional: Leave empty to find by name 'Unverified' or set ID
+const VERIFIED_ROLE_ID = '1530811817432055898';   // Optional: Leave empty to find by name 'Verified' or set ID
+const UNVERIFIED_ROLE_ID = '1530811687169556520'; // Optional: Leave empty to find by name 'Unverified' or set ID
 
 // ==================== IN-MEMORY STORAGE ====================
 const pendingCaptchas = new Map(); // userId -> { answer, attempts, timeoutId }
