@@ -297,7 +297,7 @@ client.on("messageCreate", async (message) => {
 require("./help")(client);
 require("./badwords")(client);
 require("./afk")(client);
-require("./role")(client);
+require("./verify)(client);
 require("./mod")(client);
 require("./misc")(client);
 // Connect warn layout code passing down functions
