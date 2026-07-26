@@ -218,7 +218,7 @@ module.exports = (client) => {
       }
 
       if (!isStaff(targetMember)) {
-        return message.reply({ embeds: [new EmbedBuilder().setColor("Red"].setDescription("That user is not a staff member or does not have the specified staff role.")] });
+        return message.reply({ embeds: [new EmbedBuilder().setColor["Red"].setDescription("That user is not a staff member or does not have the specified staff role.")] });
       }
 
       const userId = targetMember.id;
