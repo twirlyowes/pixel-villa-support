@@ -419,4 +419,31 @@ async function sendVerificationPanel(client) {
         }
 
         const embed = new EmbedBuilder()
-            .setTitle('Server Verification Check
+            .setTitle('Server Verification Checkpoint')
+            .setDescription('Click the **Verify** button below to complete a quick mathematical safety CAPTCHA and unlock the server channels.')
+            .setColor(0x2ecc71)
+            .setTimestamp();
+
+        const row = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('start_verify_btn')
+                    .setLabel('Verify')
+                    .setStyle(ButtonStyle.Success)
+                    .setEmoji('✅')
+            );
+
+        const messages = await channel.messages.fetch({ limit: 10 }).catch(() => null);
+        if (messages) {
+            const existingPanel = messages.find(m => m.author.id === client.user.id && m.components.length > 0);
+            if (existingPanel) {
+                await existingPanel.edit({ embeds: [embed], components: [row] });
+                return;
+            }
+        }
+
+        await channel.send({ embeds: [embed], components: [row] });
+    } catch (error) {
+        console.error('Error deploying verification panel:', error);
+    }
+}
