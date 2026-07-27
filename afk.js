@@ -116,7 +116,7 @@ module.exports = (client) => {
             }                                                                                                   
             
             // ==========================================
-            // MODULE 2: SET AFK STATUS (With Scope & Cooldown)
+            // MODULE 2: SET AFK STATUS (Interactive Prompt)
             // ==========================================
             if (lowerContent.startsWith("afk")) {
                 // Prevent rapid toggling (5 seconds cooldown)
@@ -128,70 +128,135 @@ module.exports = (client) => {
                 }
                 lastToggleTime.set(message.author.id, Date.now());
 
-                const args = content.slice(3).trim().split(/ +/);
-                let scope = "server"; // Default to server-specific
-                let reasonIndex = 0;
+                const reason = content.slice(3).trim() || "No reason provided";
 
-                if (args[0] && args[0].toLowerCase() === "global") {
-                    scope = "global";
-                    reasonIndex = 1;
-                } else if (args[0] && args[0].toLowerCase() === "server") {
-                    scope = "server";
-                    reasonIndex = 1;
-                }
+                // Step 1: Send prompt asking user to pick Global, Server, or Cancel
+                const promptEmbed = new EmbedBuilder()
+                    .setColor("#3498db")
+                    .setTitle("💤 Choose AFK Scope")
+                    .setDescription(`Please select how you want to set your AFK status using the buttons below:\n\n**Reason:** \`\`\`${reason}\`\`\``)
+                    .setFooter({ text: "This menu will expire in 120 seconds." });
 
-                const reason = args.slice(reasonIndex).join(" ").trim() || "No reason provided";
-                const time = Date.now();
-                const storageKey = scope === "global" ? globalKey : serverKey;
-
-                afkData.set(storageKey, {
-                    scope,
-                    reason,
-                    time,                                             
-                    setupAt: time
-                });                                               
-                queueSaveAFK();
-
-                const scopeText = scope === "global" ? "🌎 Global AFK" : "🏠 Server AFK";
-                const embed = new EmbedBuilder()
-                    .setColor("#f1c40f") // Yellow                    
-                    .setAuthor({
-                        name: `${displayName} is now AFK (${scopeText})`,                                                      
-                        iconURL: message.author.displayAvatarURL({ dynamic: true, extension: 'png' })
-                    })                                                
-                    .setDescription(`Status updated successfully.`)
-                    .addFields(
-                        { name: "Reason", value: `\`\`\`${reason}\`\`\``, inline: false },                                  
-                        { name: "Set At", value: formatTime(time), inline: false }
-                    )
-                    .setFooter({ text: "I will notify users who mention you." })
-                    .setTimestamp();
-
-                // Add Cancel Button
-                const row = new ActionRowBuilder().addComponents(
+                const promptRow = new ActionRowBuilder().addComponents(
                     new ButtonBuilder()
-                        .setCustomId(`cancel_afk_${message.author.id}`)
-                        .setLabel("Cancel AFK")
+                        .setCustomId(`afk_global_${message.author.id}`)
+                        .setLabel("Global AFK")
+                        .setStyle(ButtonStyle.Primary)
+                        .setEmoji("🌎"),
+                    new ButtonBuilder()
+                        .setCustomId(`afk_server_${message.author.id}`)
+                        .setLabel("Server AFK")
+                        .setStyle(ButtonStyle.Secondary)
+                        .setEmoji("🏠"),
+                    new ButtonBuilder()
+                        .setCustomId(`afk_cancel_${message.author.id}`)
+                        .setLabel("Cancel")
                         .setStyle(ButtonStyle.Danger)
                         .setEmoji("❌")
                 );
 
-                const sentMsg = await message.channel.send({ embeds: [embed], components: [row] });
+                const promptMsg = await message.channel.send({ embeds: [promptEmbed], components: [promptRow] });
 
-                // Collector for the Cancel Button (valid for 10 minutes)
-                const filter = i => i.user.id === message.author.id && i.customId === `cancel_afk_${message.author.id}`;
-                const collector = sentMsg.createMessageComponentCollector({ filter, time: 600000 });
+                // Filter to ensure ONLY the person who typed AFK can click
+                const filter = i => i.user.id === message.author.id;
+                const collector = promptMsg.createMessageComponentCollector({ filter, time: 120000 }); // 120 seconds
 
                 collector.on('collect', async i => {
-                    afkData.delete(storageKey);
-                    queueSaveAFK();
-                    
-                    const cancelledEmbed = new EmbedBuilder()
-                        .setColor("#2ecc71")
-                        .setDescription("✅ **AFK status cancelled and removed.**");
+                    const time = Date.now();
 
-                    await i.update({ embeds: [cancelledEmbed], components: [] });
+                    if (i.customId === `afk_cancel_${message.author.id}`) {
+                        collector.stop();
+                        const cancelEmbed = new EmbedBuilder()
+                            .setColor("#e74c3c")
+                            .setDescription("❌ AFK setup was cancelled.");
+                        return i.update({ embeds: [cancelEmbed], components: [] });
+                    }
+
+                    const scope = i.customId.includes("global") ? "global" : "server";
+                    const storageKey = scope === "global" ? globalKey : serverKey;
+
+                    afkData.set(storageKey, {
+                        scope,
+                        reason,
+                        time,                                             
+                        setupAt: time
+                    });                                               
+                    queueSaveAFK();
+
+                    const scopeText = scope === "global" ? "🌎 Global AFK" : "🏠 Server AFK";
+                    const successEmbed = new EmbedBuilder()
+                        .setColor("#f1c40f") // Yellow                    
+                        .setAuthor({
+                            name: `${displayName} is now AFK (${scopeText})`,                                                      
+                            iconURL: message.author.displayAvatarURL({ dynamic: true, extension: 'png' })
+                        })                                                
+                        .setDescription(`Status updated successfully.`)
+                        .addFields(
+                            { name: "Reason", value: `\`\`\`${reason}\`\`\``, inline: false },                                  
+                            { name: "Set At", value: formatTime(time), inline: false }
+                        )
+                        .setFooter({ text: "I will notify users who mention you." })
+                        .setTimestamp();
+
+                    // Persistent Cancel Button attached even after selection
+                    const activeRow = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(`afk_active_cancel_${message.author.id}`)
+                            .setLabel("Cancel AFK")
+                            .setStyle(ButtonStyle.Danger)
+                            .setEmoji("❌")
+                    );
+
+                    await i.update({ embeds: [successEmbed], components: [activeRow] });
                     collector.stop();
+
+                    // Create a secondary collector for the active cancel button
+                    const activeCollectorFilter = interaction => interaction.user.id === message.author.id && interaction.customId === `afk_active_cancel_${message.author.id}`;
+                    const activeCollector = promptMsg.createMessageComponentCollector({ filter: activeCollectorFilter, time: 604800000 }); // Valid for a long time
+
+                    activeCollector.on('collect', async interaction => {
+                        afkData.delete(storageKey);
+                        queueSaveAFK();
+                        activeCollector.stop();
+
+                        const removedEmbed = new EmbedBuilder()
+                            .setColor("#2ecc71")
+                            .setDescription("✅ **AFK status cancelled and removed.**");
+
+                        await interaction.update({ embeds: [removedEmbed], components: [] });
+                    });
+                });
+
+                collector.on('end', async (collected, reasonEnd) => {
+                    if (reasonEnd === 'time') {
+                        const expiredRow = new ActionRowBuilder().addComponents(
+                            new ButtonBuilder()
+                                .setCustomId('expired_1')
+                                .setLabel('Expired')
+                                .setStyle(ButtonStyle.Secondary)
+                                .setEmoji('⌛')
+                                .setDisabled(true),
+                            new ButtonBuilder()
+                                .setCustomId('expired_2')
+                                .setLabel('Expired')
+                                .setStyle(ButtonStyle.Secondary)
+                                .setEmoji('⌛')
+                                .setDisabled(true),
+                            new ButtonBuilder()
+                                .setCustomId('expired_3')
+                                .setLabel('Expired')
+                                .setStyle(ButtonStyle.Secondary)
+                                .setEmoji('⌛')
+                                .setDisabled(true)
+                        );
+
+                        const expiredEmbed = new EmbedBuilder()
+                            .setColor("#95a5a6")
+                            .setTitle("💤 Choose AFK Scope")
+                            .setDescription(`⌛ AFK setup timed out (120 seconds passed).\n\n**Reason:** \`\`\`${reason}\`\`\``);
+
+                        await promptMsg.edit({ embeds: [expiredEmbed], components: [expiredRow] }).catch(() => {});
+                    }
                 });
 
                 return;
