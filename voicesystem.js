@@ -7,7 +7,7 @@ const {
 
 // CONFIGURATION: Set to your Join-to-Create voice channel ID
 const CREATE_CHANNEL_ID = "1522833037346214030"; 
-const TARGET_CATEGORY_ID = "1510176143653867523"; // Optional: Category ID where temp VCs are created
+const TARGET_CATEGORY_ID = "1510176143653867523"; // Optional: Put your temporary category ID here so it only sweeps this category!
 
 // Active temporary channels tracker: Map<ChannelID, OwnerID>
 const activeTempChannels = new Map();
@@ -17,10 +17,33 @@ const creationCooldowns = new Map();
 
 module.exports = (client) => {
 
+  // Startup safety check: Clean up any orphaned empty temp channels if the bot restarted
+  client.once("ready", async () => {
+    try {
+      for (const guild of client.guilds.cache.values()) {
+        const channels = guild.channels.cache;
+        for (const channel of channels.values()) {
+          if (channel.type === ChannelType.GuildVoice && channel.id !== CREATE_CHANNEL_ID) {
+            // Check if it matches temporary room naming and is inside the target category (if set)
+            const isTempCategory = TARGET_CATEGORY_ID ? channel.parentId === TARGET_CATEGORY_ID : true;
+            const isTempNamed = channel.name.endsWith("'s Room");
+
+            if (isTempCategory && isTempNamed && channel.members.size === 0) {
+              await channel.delete().catch(() => {});
+              console.log(`[VoiceSystem] Cleaned up orphaned empty temp channel: ${channel.name}`);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Error during startup voice channel cleanup sweep:", err);
+    }
+  });
+
   // Helper function for smart user search (Mentions, User IDs, Usernames, or Nicknames)
   async function findTargetMember(message, args) {
     let targetMember = message.mentions.members.first();
-    if (targetMember) return targetMember;
+    if (targetItem = targetMember) return targetMember;
 
     if (args.length === 0) return null;
 
