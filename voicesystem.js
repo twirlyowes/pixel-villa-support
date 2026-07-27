@@ -17,6 +17,31 @@ const creationCooldowns = new Map();
 
 module.exports = (client) => {
 
+  // Helper function for smart user search (Mentions, User IDs, Usernames, or Nicknames)
+  async function findTargetMember(message, args) {
+    let targetMember = message.mentions.members.first();
+    if (targetMember) return targetMember;
+
+    if (args.length === 0) return null;
+
+    const query = args.join(" ").toLowerCase();
+    
+    // Check if query is an ID
+    const rawId = query.replace(/[<@!>]/g, "");
+    if (/^\d+$/.test(rawId)) {
+      const fetched = await message.guild.members.fetch(rawId).catch(() => null);
+      if (fetched) return fetched;
+    }
+
+    // Search by username, global name, or server nickname
+    await message.guild.members.fetch().catch(() => {}); // Ensure cache is populated
+    return message.guild.members.cache.find(m => 
+      m.user.username.toLowerCase().includes(query) ||
+      (m.user.globalName && m.user.globalName.toLowerCase().includes(query)) ||
+      (m.nickname && m.nickname.toLowerCase().includes(query))
+    );
+  }
+
   // 1. Monitor Voice State Updates (Join to Create & Auto Delete)
   client.on("voiceStateUpdate", async (oldState, newState) => {
     const member = newState.member;
@@ -35,7 +60,9 @@ module.exports = (client) => {
 
       try {
         const guild = newState.guild;
-        const channelName = `${member.user.username}'s Room`;
+        // Uses display name / server nickname / global name instead of technical username
+        const displayName = member.displayName || member.user.username;
+        const channelName = `${displayName}'s Room`;
 
         // Create the temporary voice channel
         const tempChannel = await guild.channels.create({
@@ -65,11 +92,11 @@ module.exports = (client) => {
         await member.voice.setChannel(tempChannel);
         activeTempChannels.set(tempChannel.id, member.id);
 
-        // Send Welcome Embed with Command List inside the new channel (if text-in-voice or general setup allows messaging)
+        // Send Welcome Embed with Command List inside the new channel
         const controlEmbed = new EmbedBuilder()
           .setColor("#5865F2")
           .setTitle("🎙️ Temporary Voice Control Panel")
-          .setDescription(`Welcome to your private room, ${member}! You are the **owner** of this channel.\n\nUse the commands below directly in chat to manage your room:`)
+          .setDescription(`Welcome to your private room, ${member}! You are the **owner** of this channel.\n\nUse the commands below directly in chat to manage your room (Supports both mentions and name searches like \`vcadd rukia\`):`)
           .addFields(
             {
               name: "Available Voice Commands",
@@ -80,15 +107,16 @@ module.exports = (client) => {
               "`vcunhide` - Make your room visible\n" +
               "`vcname [name]` - Rename your room\n" +
               "`vclimit [number]` - Set user limit (0-99)\n" +
-              "`vcadd @user` - Allow/add a user to your room\n" +
-              "`vckick @user` - Kick a user from your room",
+              "`vcadd @user/name` - Allow/add a user to your room\n" +
+              "`vcremove @user/name` - Remove/revoke user access from your room\n" +
+              "`vckick @user/name` - Kick a user from your room",
               inline: false
             }
           )
           .setFooter({ text: "Pixel Villa Voice Master System" })
           .setTimestamp();
 
-        // Send message to the channel (Discord voice channels support text-in-voice)
+        // Send message to the channel
         await tempChannel.send({ content: `${member}`, embeds: [controlEmbed] });
 
       } catch (error) {
@@ -180,12 +208,13 @@ module.exports = (client) => {
       return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription(`👥 User limit set to **${limit === 0 ? "Unlimited" : limit}**.`)] });
     }
 
-    // ADD / PERMIT COMMAND (`vcadd @user`)
+    // ADD / PERMIT COMMAND (Supports Smart Search & Mentions)[cite: 3]
     if (command === "vcadd") {
       if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });
-      const targetMember = message.mentions.members.first();
+      const targetMember = await findTargetMember(message, args);
+      
       if (!targetMember) {
-        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("⚠️ Please mention a valid user to add to your channel.")] });
+        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("⚠️ Please specify a valid user name or mention to add to your channel.")] });
       }
 
       await memberChannel.permissionOverwrites.edit(targetMember.id, { 
@@ -195,12 +224,30 @@ module.exports = (client) => {
       return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription(`✅ Added **${targetMember.user.tag}** to your channel permissions.`)] });
     }
 
-    // KICK COMMAND
+    // REMOVE / REVOKE COMMAND (Supports Smart Search & Mentions)
+    if (command === "vcremove") {
+      if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });
+      const targetMember = await findTargetMember(message, args);
+
+      if (!targetMember) {
+        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("⚠️ Please specify a valid user name or mention to remove from your channel permissions.")] });
+      }
+
+      if (targetMember.id === ownerId) {
+        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("❌ You cannot remove permissions for yourself.")] });
+      }
+
+      await memberChannel.permissionOverwrites.delete(targetMember.id).catch(() => {});
+      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription(`❌ Revoked channel permissions for **${targetMember.user.tag}**.`)] });
+    }
+
+    // KICK COMMAND (Supports Smart Search & Mentions)
     if (command === "vckick") {
       if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });
-      const targetMember = message.mentions.members.first();
+      const targetMember = await findTargetMember(message, args);
+
       if (!targetMember || targetMember.voice.channelId !== memberChannel.id) {
-        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("⚠️ Please mention a user who is currently inside your voice channel.")] });
+        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("⚠️ Please specify a valid user who is currently inside your voice channel.")] });
       }
 
       await targetMember.voice.disconnect();
