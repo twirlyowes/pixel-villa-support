@@ -7,7 +7,7 @@ const {
 
 // CONFIGURATION: Set to your Join-to-Create voice channel ID
 const CREATE_CHANNEL_ID = "1522833037346214030"; 
-const TARGET_CATEGORY_ID = ""; // Optional: Category ID where temp VCs are created
+const TARGET_CATEGORY_ID = "1510176143653867523"; // Optional: Category ID where temp VCs are created
 
 // Active temporary channels tracker: Map<ChannelID, OwnerID>
 const activeTempChannels = new Map();
