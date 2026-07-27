@@ -1,9 +1,4 @@
-/**
- * ============================================================================
- * PRODUCTION-READY STAFF ACTIVE TIME TRACKER (DISCORD.JS V14)
- * ============================================================================
- */
-
+// Location: activetime.js
 const { EmbedBuilder } = require("discord.js");
 
 const STAFF_ROLE_ID = "1511051007772069929"; 
@@ -142,8 +137,10 @@ module.exports = (client) => {
           const hours = Math.floor(totalSeconds / 3600);
           const minutes = Math.floor((totalSeconds % 3600) / 60);
           
-          // Pings the member directly using <@userId> alongside their recorded time
-          reportText += `<@${userId}>: **${hours}h ${minutes}m**\n`;
+          const member = guild.members.cache.get(userId) || await guild.members.fetch(userId).catch(() => null);
+          const name = member ? member.user.username : "Unknown User";
+
+          reportText += `**${name}**: **${hours}h ${minutes}m**\n`;
         }
       }
 
@@ -151,7 +148,7 @@ module.exports = (client) => {
 
       embed.addFields({ name: "Staff Durations", value: reportText, inline: false });
       
-      await channel.send({ content: "📢 **Staff Activity Report Update:**", embeds: [embed] });
+      await channel.send({ embeds: [embed] });
       await saveTimesToFile();
     } catch (err) {
       console.error("Error sending daily staff activity report:", err);
@@ -195,7 +192,7 @@ module.exports = (client) => {
     const words = rawContent.split(/ +/);
     const command = words.shift().toLowerCase();
 
-    // FORCE LOG COMMAND: atlogs (Administrator only)
+    // FORCE LOG COMMAND: atlogs (No prefix, Administrator only)
     if (command === "atlogs") {
       if (!message.member.permissions.has("Administrator")) {
         return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("❌ You need Administrator permissions to force-log staff activity.")] });
@@ -221,7 +218,7 @@ module.exports = (client) => {
       }
 
       if (!isStaff(targetMember)) {
-        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("That user is not a staff member or does not have the specified staff role.")] });
+        return message.reply({ embeds: [new EmbedBuilder().setColor["Red"].setDescription("That user is not a staff member or does not have the specified staff role.")] });
       }
 
       const userId = targetMember.id;
