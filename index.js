@@ -296,14 +296,11 @@ client.on("messageCreate", async (message) => {
 // Load external modules cleanly
 require("./help")(client);
 require("./badwords")(client);
-require("./afk")(client);
 require("./mod")(client);
 require("./verify")(client);
 require("./misc")(client);
 // Connect warn layout code passing down functions
 require("./warn")(client, { getWarnings, saveWarnings, hasModPermission, hierarchyCheck, sendLog });
-require("./voicesystem")(client);
-require("./activetime")(client);
 client.login(config.TOKEN);
 
 const express = require('express');
