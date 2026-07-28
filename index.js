@@ -3,7 +3,8 @@ const {
   Client,
   GatewayIntentBits,
   EmbedBuilder,
-  PermissionsBitField
+  PermissionsBitField,
+  ActivityType
 } = require("discord.js");
 const fs = require("fs").promises; // Non-blocking async fs
 const path = require("path");
@@ -99,6 +100,16 @@ async function sendLog(guild, embed) {
 
 client.once("ready", () => {
   console.log(`${client.user.tag} is online and fully optimized!`);
+
+  client.user.setPresence({
+    activities: [
+      {
+        name: "Pixel Villa",
+        type: ActivityType.Watching,
+      },
+    ],
+    status: "online",
+  });
 });
 
 client.on("messageCreate", async (message) => {
