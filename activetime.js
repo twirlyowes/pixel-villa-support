@@ -2,7 +2,7 @@
 const { EmbedBuilder } = require("discord.js");
 
 const STAFF_ROLE_ID = "1511051007772069929"; 
-const LOG_CHANNEL_ID = "1523648445276098680"; 
+const LOG_CHANNEL_ID = ""; 
 
 // --- JSONBIN CONFIGURATION ---
 const BIN_ID = "6a61ab71da38895dfe82b0cc";
