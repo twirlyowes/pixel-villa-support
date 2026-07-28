@@ -194,7 +194,7 @@ module.exports = (client) => {
     // FORCE LOG COMMAND: atlogs (No prefix, Administrator only)
     if (command === "atlogs") {
       if (!message.member.permissions.has("Administrator")) {
-        return message.reply({ embeds: [new EmbedBuilder().setColor("Red"].setDescription("❌ You need Administrator permissions to force-log staff activity.")] });
+        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("❌ You need Administrator permissions to force-log staff activity.")] });
       }
       await message.reply("🔄 Generating and sending the staff activity report now...");
       await sendDailyReport(message.guild);
