@@ -22,7 +22,6 @@ async function loadSavedTimes() {
     dailyActiveTimes = new Map(Object.entries(json).map(([k, v]) => [k, Number(v)]));
   } catch (error) {
     console.error("Error reading from JSONBin:", error);
-    dailyActiveTimes = new Map();
   }
 }
 
@@ -48,6 +47,7 @@ module.exports = (client) => {
   };
 
   client.once("ready", async () => {
+    console.log("[DEBUG] Client ready event triggered. Loading saved times...");
     await loadSavedTimes();
     const now = Date.now();
     
@@ -62,7 +62,9 @@ module.exports = (client) => {
       });
     }
 
-    // Reliable clock checker for 3:00 AM IST report[cite: 2]
+    console.log(`[DEBUG] Initialized activeSessions size: ${activeSessions.size}, dailyActiveTimes size: ${dailyActiveTimes.size}`);
+
+    // Reliable clock checker for 3:00 AM IST report
     startClockChecker(client);
 
     // Auto-update JSONBin every 5 minutes asynchronously without blocking loops
@@ -98,7 +100,7 @@ module.exports = (client) => {
         if (guild) {
           await sendDailyReport(guild);
           
-          // Reset data at 3:05 AM IST (5 minutes after report)[cite: 2]
+          // Reset data at 3:05 AM IST (5 minutes after report)
           setTimeout(async () => {
             dailyActiveTimes.clear();
             await saveTimesToFile();
@@ -110,9 +112,19 @@ module.exports = (client) => {
   }
 
   async function sendDailyReport(guild) {
+    console.log("[DEBUG] sendDailyReport() function was called.");
     try {
-      const channel = await guild.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
-      if (!channel) return;
+      console.log(`[DEBUG] Attempting to fetch log channel with ID: ${LOG_CHANNEL_ID} in guild: ${guild.name}`);
+      const channel = await guild.channels.fetch(LOG_CHANNEL_ID).catch((fetchErr) => {
+        console.error("[DEBUG] Exact channel fetch error stack trace:", fetchErr);
+        return null;
+      });
+
+      if (!channel) {
+        console.error(`[DEBUG] Failed to fetch log channel. Channel ID ${LOG_CHANNEL_ID} might be invalid or bot lacks permissions.`);
+        return;
+      }
+      console.log(`[DEBUG] Successfully fetched log channel: ${channel.name} (${channel.id})`);
 
       const now = Date.now();
       for (const [userId, startTime] of activeSessions.entries()) {
@@ -121,6 +133,9 @@ module.exports = (client) => {
         dailyActiveTimes.set(userId, currentTotal + duration);
         activeSessions.set(userId, now);
       }
+
+      console.log(`[DEBUG] dailyActiveTimes size before building report: ${dailyActiveTimes.size}`);
+      console.log(`[DEBUG] dailyActiveTimes contents:`, Object.fromEntries(dailyActiveTimes));
 
       const embed = new EmbedBuilder()
         .setColor("#5865F2")
@@ -138,19 +153,26 @@ module.exports = (client) => {
           const hours = Math.floor(totalSeconds / 3600);
           const minutes = Math.floor((totalSeconds % 3600) / 60);
           
-          // Staff member ping added here
           reportText += `<@${userId}>: **${hours}h ${minutes}m**\n`;
         }
       }
 
       if (!reportText) reportText = "No active staff time recorded today.";
 
+      // Handle safety check if text exceeds Discord embed field limit (1024 chars)
+      if (reportText.length > 1024) {
+        reportText = reportText.substring(0, 1021) + "...";
+      }
+
       embed.addFields({ name: "Staff Durations", value: reportText, inline: false });
       
+      console.log("[DEBUG] About to send embed via channel.send()");
       await channel.send({ embeds: [embed] });
+      console.log("[DEBUG] Successfully sent embed via channel.send()");
+
       await saveTimesToFile();
     } catch (err) {
-      console.error("Error sending daily staff activity report:", err);
+      console.error("[DEBUG] Error sending daily staff activity report - Full Stack Trace:", err);
     }
   }
 
