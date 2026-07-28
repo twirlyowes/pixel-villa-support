@@ -62,7 +62,7 @@ module.exports = (client) => {
       });
     }
 
-    // Reliable clock checker for 3:00 AM IST report
+    // Reliable clock checker for 3:00 AM IST report[cite: 2]
     startClockChecker(client);
 
     // Auto-update JSONBin every 5 minutes asynchronously without blocking loops
@@ -98,6 +98,7 @@ module.exports = (client) => {
         if (guild) {
           await sendDailyReport(guild);
           
+          // Reset data at 3:05 AM IST (5 minutes after report)[cite: 2]
           setTimeout(async () => {
             dailyActiveTimes.clear();
             await saveTimesToFile();
@@ -137,10 +138,8 @@ module.exports = (client) => {
           const hours = Math.floor(totalSeconds / 3600);
           const minutes = Math.floor((totalSeconds % 3600) / 60);
           
-          const member = guild.members.cache.get(userId) || await guild.members.fetch(userId).catch(() => null);
-          const name = member ? member.user.username : "Unknown User";
-
-          reportText += `**${name}**: **${hours}h ${minutes}m**\n`;
+          // Staff member ping added here
+          reportText += `<@${userId}>: **${hours}h ${minutes}m**\n`;
         }
       }
 
@@ -195,7 +194,7 @@ module.exports = (client) => {
     // FORCE LOG COMMAND: atlogs (No prefix, Administrator only)
     if (command === "atlogs") {
       if (!message.member.permissions.has("Administrator")) {
-        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("❌ You need Administrator permissions to force-log staff activity.")] });
+        return message.reply({ embeds: [new EmbedBuilder().setColor("Red"].setDescription("❌ You need Administrator permissions to force-log staff activity.")] });
       }
       await message.reply("🔄 Generating and sending the staff activity report now...");
       await sendDailyReport(message.guild);
@@ -218,7 +217,7 @@ module.exports = (client) => {
       }
 
       if (!isStaff(targetMember)) {
-        return message.reply({ embeds: [new EmbedBuilder().setColor["Red"].setDescription("That user is not a staff member or does not have the specified staff role.")] });
+        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("That user is not a staff member or does not have the specified staff role.")] });
       }
 
       const userId = targetMember.id;
