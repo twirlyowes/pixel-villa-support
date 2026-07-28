@@ -6,8 +6,8 @@ const {
 } = require("discord.js");
 
 // CONFIGURATION: Set to your Join-to-Create voice channel ID
-const CREATE_CHANNEL_ID = "1522833037346214030"; 
-const TARGET_CATEGORY_ID = "YOUR_CATEGORY_ID_HERE"; // Optional: Put your temporary category ID here so it only sweeps this category!
+const CREATE_CHANNEL_ID = ""; 
+const TARGET_CATEGORY_ID = ""; // Optional: Put your temporary category ID here so it only sweeps this category!
 
 // Active temporary channels tracker: Map<ChannelID, OwnerID>
 const activeTempChannels = new Map();
