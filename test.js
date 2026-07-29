@@ -1,18 +1,18 @@
 const { Client, GatewayIntentBits } = require("discord.js");
-const config = require("./config.json");
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
 
+client.on("debug", m => console.log("[DEBUG]", m));
+client.on("warn", console.warn);
+client.on("error", console.error);
+client.on("shardError", console.error);
+
 client.once("ready", () => {
   console.log("READY:", client.user.tag);
 });
 
-client.on("error", console.error);
-client.on("warn", console.warn);
-client.on("debug", console.log);
-
-client.login(config.TOKEN)
-  .then(() => console.log("LOGIN SUCCESS"))
-  .catch(console.error);
+client.login("YOUR_TOKEN_HERE")
+  .then(() => console.log("LOGIN RESOLVED"))
+  .catch(err => console.error("LOGIN FAILED:", err));
