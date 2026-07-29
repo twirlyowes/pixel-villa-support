@@ -304,25 +304,45 @@ client.on("messageCreate", async (message) => {
   }
 });
 
-// Load external modules cleanly
+console.log("Loading help...");
 require("./help")(client);
-require("./badwords")(client);
-require("./mod")(client);
-require("./verify")(client);
-require("./misc")(client);
-// Connect warn layout code passing down functions
-require("./warn")(client, { getWarnings, saveWarnings, hasModPermission, hierarchyCheck, sendLog });
-require("./activetime")(client);
-require("./voicesystem")(client);
-require("./afk")(client);
-client.on("error", console.error);
 
-client.on("shardError", console.error);
+console.log("Loading badwords...");
+require("./badwords")(client);
+
+console.log("Loading mod...");
+require("./mod")(client);
+
+console.log("Loading verify...");
+require("./verify")(client);
+
+console.log("Loading misc...");
+require("./misc")(client);
+
+console.log("Loading warn...");
+require("./warn")(client, {
+  getWarnings,
+  saveWarnings,
+  hasModPermission,
+  hierarchyCheck,
+  sendLog
+});
+
+console.log("Loading activetime...");
+require("./activetime")(client);
+
+console.log("Loading voicesystem...");
+require("./voicesystem")(client);
+
+console.log("Loading afk...");
+require("./afk")(client);
+
+console.log("About to login...");
+console.log("Token exists:", !!config.TOKEN);
 
 client.login(config.TOKEN)
-  .then(() => console.log("Login successful"))
-  .catch(err => console.error("Login failed:", err));
-
+  .then(() => console.log("✅ Login successful"))
+  .catch(err => console.error("❌ Login failed:", err));
 const express = require('express');
 const app = express();
 
