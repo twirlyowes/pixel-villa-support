@@ -319,6 +319,9 @@ require("./verify")(client);
 console.log("Loading misc...");
 require("./misc")(client);
 
+console.log("Loading voicesystem...");
+require("./voicesystem")(client);
+
 console.log("Loading warn...");
 require("./warn")(client, {
   getWarnings,
