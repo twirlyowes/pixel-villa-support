@@ -315,7 +315,13 @@ require("./warn")(client, { getWarnings, saveWarnings, hasModPermission, hierarc
 require("./activetime")(client);
 require("./voicesystem")(client);
 require("./afk")(client);
-client.login(config.TOKEN);
+client.on("error", console.error);
+
+client.on("shardError", console.error);
+
+client.login(config.TOKEN)
+  .then(() => console.log("Login successful"))
+  .catch(err => console.error("Login failed:", err));
 
 const express = require('express');
 const app = express();
