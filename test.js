@@ -13,6 +13,6 @@ client.once("ready", () => {
   console.log("READY:", client.user.tag);
 });
 
-client.login("YOUR_TOKEN_HERE")
+client.login("MTUyNDY4MTY2OTU4MjUyNDUxNg.Gy-Sn_.m7CyABM6nUCcn-SkNxMiPwbQMXIICnLmC2R_-I")
   .then(() => console.log("LOGIN RESOLVED"))
   .catch(err => console.error("LOGIN FAILED:", err));
