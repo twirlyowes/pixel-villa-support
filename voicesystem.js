@@ -83,32 +83,55 @@ module.exports = (client) => {
 
       try {
         const guild = newState.guild;
-        // Uses display name / server nickname / global name instead of technical username
         const displayName = member.displayName || member.user.username;
         const channelName = `${displayName}'s Room`;
 
-        // Create the temporary voice channel
+        // Fetch the category to copy its permission overwrites if it exists
+        let categoryOverwrites = [];
+        if (TARGET_CATEGORY_ID) {
+          const categoryChannel = await guild.channels.fetch(TARGET_CATEGORY_ID).catch(() => null);
+          if (categoryChannel && categoryChannel.type === ChannelType.GuildCategory) {
+            // Map category overwrites to the format required by guild.channels.create
+            categoryOverwrites = categoryChannel.permissionOverwrites.cache.map(overwrite => ({
+              id: overwrite.id,
+              type: overwrite.type,
+              allow: overwrite.allow,
+              deny: overwrite.deny,
+            }));
+          }
+        }
+
+        // Define owner-specific overrides to ensure they have full management control
+        const ownerOverwrite = {
+          id: member.id,
+          allow: [
+            PermissionsBitField.Flags.Connect,
+            PermissionsBitField.Flags.ManageChannels,
+            PermissionsBitField.Flags.MuteMembers,
+            PermissionsBitField.Flags.DeafenMembers,
+            PermissionsBitField.Flags.MoveMembers,
+            PermissionsBitField.Flags.ViewChannel
+          ],
+        };
+
+        // Combine category overwrites with the owner's explicit overrides
+        // If the owner already exists in category overwrites, we can map/replace or append safely
+        const existingOwnerIndex = categoryOverwrites.findIndex(o => o.id === member.id);
+        if (existingOwnerIndex !== -1) {
+          // Merge flags if owner is already present in category permission setup
+          const existing = categoryOverwrites[existingOwnerIndex];
+          const combinedAllow = new PermissionsBitField(existing.allow).add(ownerOverwrite.allow);
+          categoryOverwrites[existingOwnerIndex].allow = combinedAllow;
+        } else {
+          categoryOverwrites.push(ownerOverwrite);
+        }
+
+        // Create the temporary voice channel with copied and custom overwrites
         const tempChannel = await guild.channels.create({
           name: channelName,
           type: ChannelType.GuildVoice,
           parent: TARGET_CATEGORY_ID || newState.channel?.parentId || null,
-          permissionOverwrites: [
-            {
-              id: guild.id,
-              allow: [PermissionsBitField.Flags.Connect, PermissionsBitField.Flags.ViewChannel],
-            },
-            {
-              id: member.id,
-              allow: [
-                PermissionsBitField.Flags.Connect,
-                PermissionsBitField.Flags.ManageChannels,
-                PermissionsBitField.Flags.MuteMembers,
-                PermissionsBitField.Flags.DeafenMembers,
-                PermissionsBitField.Flags.MoveMembers,
-                PermissionsBitField.Flags.ViewChannel
-              ],
-            },
-          ],
+          permissionOverwrites: categoryOverwrites,
         });
 
         // Move user into their newly created channel
