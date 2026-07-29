@@ -12,7 +12,7 @@ const TARGET_CATEGORY_ID = "1531893602706526208"; // Optional: Put your temporar
 
 // --- JSONBIN CONFIGURATION ---
 const BIN_ID = "6a69f2dbf5f4af5e29d1274e";
-const API_KEY = "";
+const API_KEY = "$2a$10$aCLBlkuqB51DVhDxNoqisureJOzr5ljUp6AyTncij4YryQSiAKPwa";
 
 // Active temporary channels tracker: Map<ChannelID, OwnerID>
 const activeTempChannels = new Map();
