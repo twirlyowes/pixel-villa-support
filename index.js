@@ -331,9 +331,6 @@ require("./warn")(client, {
 console.log("Loading activetime...");
 require("./activetime")(client);
 
-console.log("Loading voicesystem...");
-require("./voicesystem")(client);
-
 console.log("Loading afk...");
 require("./afk")(client);
 
