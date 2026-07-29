@@ -12,9 +12,6 @@ const TARGET_CATEGORY_ID = "1531893602706526208"; // Optional: Put your temporar
 // Active temporary channels tracker: Map<ChannelID, OwnerID>
 const activeTempChannels = new Map();
 
-// Cooldown tracker to prevent rapid spam tripping security bots
-const creationCooldowns = new Map();
-
 module.exports = (client) => {
 
   // Startup safety check: Clean up any orphaned empty temp channels if the bot restarted
@@ -24,11 +21,8 @@ module.exports = (client) => {
         const channels = guild.channels.cache;
         for (const channel of channels.values()) {
           if (channel.type === ChannelType.GuildVoice && channel.id !== CREATE_CHANNEL_ID) {
-            // Check if it matches temporary room naming and is inside the target category (if set)
-            const isTempCategory = TARGET_CATEGORY_ID ? channel.parentId === TARGET_CATEGORY_ID : true;
-            const isTempNamed = channel.name.endsWith("'s Room");
-
-            if (isTempCategory && isTempNamed && channel.members.size === 0) {
+            // Check if it is inside the target category
+            if (TARGET_CATEGORY_ID && channel.parentId === TARGET_CATEGORY_ID && channel.members.size === 0) {
               await channel.delete().catch(() => {});
               console.log(`[VoiceSystem] Cleaned up orphaned empty temp channel: ${channel.name}`);
             }
@@ -72,15 +66,6 @@ module.exports = (client) => {
 
     // User joined the "Join to Create" channel
     if (newState.channelId === CREATE_CHANNEL_ID) {
-      // Basic rate limiting check (prevents rapid creation spam triggers)
-      const lastCreated = creationCooldowns.get(member.id) || 0;
-      const now = Date.now();
-      if (now - lastCreated < 7000) { // 7 seconds cooldown per user
-        try { await member.voice.setChannel(null); } catch (e) {}
-        return;
-      }
-      creationCooldowns.set(member.id, now);
-
       try {
         const guild = newState.guild;
         const displayName = member.displayName || member.user.username;
@@ -115,10 +100,8 @@ module.exports = (client) => {
         };
 
         // Combine category overwrites with the owner's explicit overrides
-        // If the owner already exists in category overwrites, we can map/replace or append safely
         const existingOwnerIndex = categoryOverwrites.findIndex(o => o.id === member.id);
         if (existingOwnerIndex !== -1) {
-          // Merge flags if owner is already present in category permission setup
           const existing = categoryOverwrites[existingOwnerIndex];
           const combinedAllow = new PermissionsBitField(existing.allow).add(ownerOverwrite.allow);
           categoryOverwrites[existingOwnerIndex].allow = combinedAllow;
@@ -170,16 +153,31 @@ module.exports = (client) => {
       }
     }
 
-    // Check if someone left a temporary channel (Auto-delete if empty)
-    if (oldState.channelId && activeTempChannels.has(oldState.channelId)) {
+    // Check if someone left a channel (Auto-delete with a 3-second delay if empty)
+    if (oldState.channelId) {
       const leftChannel = oldState.channel;
-      if (leftChannel && leftChannel.members.size === 0) {
-        try {
-          await leftChannel.delete();
-          activeTempChannels.delete(oldState.channelId);
-        } catch (error) {
-          console.error("Error deleting empty temp channel:", error);
-        }
+      
+      if (
+        leftChannel && 
+        leftChannel.members.size === 0 && 
+        leftChannel.id !== CREATE_CHANNEL_ID &&
+        leftChannel.parentId === TARGET_CATEGORY_ID
+      ) {
+        // Wait 3 seconds to ensure it's truly abandoned (e.g. user is reconnecting or switching channels)
+        setTimeout(async () => {
+          try {
+            // Re-fetch channel to check if it's still empty after 3 seconds
+            const fetchedChannel = await oldState.guild.channels.fetch(oldState.channelId).catch(() => null);
+            if (fetchedChannel && fetchedChannel.members.size === 0) {
+              await fetchedChannel.delete();
+              if (activeTempChannels.has(oldState.channelId)) {
+                activeTempChannels.delete(oldState.channelId);
+              }
+            }
+          } catch (error) {
+            console.error("Error deleting empty temp channel after delay:", error);
+          }
+        }, 3000);
       }
     }
   });
