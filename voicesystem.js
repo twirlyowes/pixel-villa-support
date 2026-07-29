@@ -1,301 +1,437 @@
 // Location: voicesystem.js
-const { 
-  ChannelType, 
-  PermissionsBitField, 
-  EmbedBuilder 
+const {
+ChannelType,
+PermissionsBitField,
+EmbedBuilder
 } = require("discord.js");
+const axios = require("axios");
 
 // CONFIGURATION: Set to your Join-to-Create voice channel ID
-const CREATE_CHANNEL_ID = "1522833037346214030"; 
+const CREATE_CHANNEL_ID = "1522833037346214030";
 const TARGET_CATEGORY_ID = "1531893602706526208"; // Optional: Put your temporary category ID here so it only sweeps this category!
+
+// --- JSONBIN CONFIGURATION ---
+const BIN_ID = "6a69f2dbf5f4af5e29d1274e";
+const API_KEY = "$2a$10$aCLB1kuqB51DVhDxNoqisureJ0zr51jUp6AyTnnci4YryQSiAKPwa";
 
 // Active temporary channels tracker: Map<ChannelID, OwnerID>
 const activeTempChannels = new Map();
 
+// Helper functions for JSONBin API communication with error handling
+async function fetchJSONBin() {
+try {
+const response = await axios.get(https://api.jsonbin.io/v3/b/${BIN_ID}/latest, {
+headers: { "X-Master-Key": API_KEY }
+});
+return response.data.record || { channels: {} };
+} catch (error) {
+console.error("[JSONBin] Error fetching data:", error.message);
+return { channels: {} };
+}
+}
+
+async function updateJSONBin(data) {
+try {
+await axios.put(https://api.jsonbin.io/v3/b/${BIN_ID}, data, {
+headers: {
+"Content-Type": "application/json",
+"X-Master-Key": API_KEY
+}
+});
+} catch (error) {
+console.error("[JSONBin] Error updating data:", error.message);
+}
+}
+
 module.exports = (client) => {
 
-  // Startup safety check: Clean up any orphaned empty temp channels if the bot restarted
-  client.once("ready", async () => {
-    try {
-      for (const guild of client.guilds.cache.values()) {
-        const channels = guild.channels.cache;
-        for (const channel of channels.values()) {
-          if (channel.type === ChannelType.GuildVoice && channel.id !== CREATE_CHANNEL_ID) {
-            // Check if it is inside the target category
-            if (TARGET_CATEGORY_ID && channel.parentId === TARGET_CATEGORY_ID && channel.members.size === 0) {
-              await channel.delete().catch(() => {});
-              console.log(`[VoiceSystem] Cleaned up orphaned empty temp channel: ${channel.name}`);
-            }
-          }
-        }
-      }
-    } catch (err) {
-      console.error("Error during startup voice channel cleanup sweep:", err);
-    }
-  });
+// Startup safety check & JSONBin persistent channel restoration
+client.once("ready", async () => {
+try {
+const binData = await fetchJSONBin();
+if (!binData.channels) binData.channels = {};
 
-  // Helper function for smart user search (Mentions, User IDs, Usernames, or Nicknames)
-  async function findTargetMember(message, args) {
-    let targetMember = message.mentions.members.first();
-    if (targetMember) return targetMember;
+let dataChanged = false;  
 
-    if (args.length === 0) return null;
+  for (const guild of client.guilds.cache.values()) {  
+    const channels = guild.channels.cache;  
 
-    const query = args.join(" ").toLowerCase();
+    // Restore active temporary channels from JSONBin into Map with thorough checks  
+    for (const [channelId, channelData] of Object.entries(binData.channels)) {  
+      const targetChannel = channels.get(channelId);  
+
+      // Verify saved channel IDs exist and are voice channels before checking members  
+      if (!targetChannel || targetChannel.type !== ChannelType.GuildVoice) {  
+        delete binData.channels[channelId];  
+        dataChanged = true;  
+      } else if (targetChannel.members.size === 0) {  
+        // Delete empty temporary channels from JSONBin and Discord  
+        await targetChannel.delete().catch(() => {});  
+        delete binData.channels[channelId];  
+        dataChanged = true;  
+        console.log(`[VoiceSystem] Cleaned up orphaned empty temp channel: ${targetChannel.name}`);  
+      } else {  
+        activeTempChannels.set(channelId, channelData.owner);  
+      }  
+    }  
+
+    // Sweep any unmapped channels in target category that might be empty  
+    for (const channel of channels.values()) {  
+      if (channel.type === ChannelType.GuildVoice && channel.id !== CREATE_CHANNEL_ID) {  
+        if (TARGET_CATEGORY_ID && channel.parentId === TARGET_CATEGORY_ID && channel.members.size === 0) {  
+          await channel.delete().catch(() => {});  
+          if (binData.channels[channel.id]) {  
+            delete binData.channels[channel.id];  
+            dataChanged = true;  
+          }  
+          console.log(`[VoiceSystem] Cleaned up orphaned empty temp channel: ${channel.name}`);  
+        }  
+      }  
+    }  
+  }  
+
+  if (dataChanged) {  
+    await updateJSONBin(binData);  
+  }  
+} catch (err) {  
+  console.error("Error during startup voice channel cleanup sweep & JSONBin sync:", err);  
+}
+
+});
+
+// Helper function for smart user search (Mentions, User IDs, Usernames, or Nicknames)
+async function findTargetMember(message, args) {
+let targetMember = message.mentions.members.first();
+if (targetMember) return targetMember;
+
+if (args.length === 0) return null;  
+
+const query = args.join(" ").toLowerCase();  
+  
+// Check if query is an ID  
+const rawId = query.replace(/[<@!>]/g, "");  
+if (/^\d+$/.test(rawId)) {  
+  const fetched = await message.guild.members.fetch(rawId).catch(() => null);  
+  if (fetched) return fetched;  
+}  
+
+// Search by username, global name, or server nickname  
+await message.guild.members.fetch().catch(() => {}); // Ensure cache is populated  
+return message.guild.members.cache.find(m =>   
+  m.user.username.toLowerCase().includes(query) ||  
+  (m.user.globalName && m.user.globalName.toLowerCase().includes(query)) ||  
+  (m.nickname && m.nickname.toLowerCase().includes(query))  
+);
+
+}
+
+// 1. Monitor Voice State Updates (Join to Create & Auto Delete)
+client.on("voiceStateUpdate", async (oldState, newState) => {
+const member = newState.member;
+if (!member || member.user.bot) return;
+
+// User joined the "Join to Create" channel  
+if (newState.channelId === CREATE_CHANNEL_ID) {  
+  try {  
+    const guild = newState.guild;  
+    const displayName = member.displayName || member.user.username;  
+    const channelName = `${displayName}'s Room`;  
+
+    // Fetch the category to copy its permission overwrites if it exists  
+    let categoryOverwrites = [];  
+    if (TARGET_CATEGORY_ID) {  
+      const categoryChannel = await guild.channels.fetch(TARGET_CATEGORY_ID).catch(() => null);  
+      if (categoryChannel && categoryChannel.type === ChannelType.GuildCategory) {  
+        categoryOverwrites = categoryChannel.permissionOverwrites.cache.map(overwrite => ({  
+          id: overwrite.id,  
+          type: overwrite.type,  
+          allow: overwrite.allow,  
+          deny: overwrite.deny,  
+        }));  
+      }  
+    }  
+
+    // Define owner-specific overrides to ensure they have full management control  
+    const ownerOverwrite = {  
+      id: member.id,  
+      allow: [  
+        PermissionsBitField.Flags.Connect,  
+        PermissionsBitField.Flags.ManageChannels,  
+        PermissionsBitField.Flags.MuteMembers,  
+        PermissionsBitField.Flags.DeafenMembers,  
+        PermissionsBitField.Flags.MoveMembers,  
+        PermissionsBitField.Flags.ViewChannel  
+      ],  
+    };  
+
+    const existingOwnerIndex = categoryOverwrites.findIndex(o => o.id === member.id);  
+    if (existingOwnerIndex !== -1) {  
+      const existing = categoryOverwrites[existingOwnerIndex];  
+      const combinedAllow = new PermissionsBitField(existing.allow).add(ownerOverwrite.allow);  
+      categoryOverwrites[existingOwnerIndex].allow = combinedAllow;  
+    } else {  
+      categoryOverwrites.push(ownerOverwrite);  
+    }  
+
+    // Create the temporary voice channel without rtcRegion specification  
+    const tempChannel = await guild.channels.create({  
+      name: channelName,  
+      type: ChannelType.GuildVoice,  
+      parent: TARGET_CATEGORY_ID || newState.channel?.parentId || null,  
+      permissionOverwrites: categoryOverwrites,  
+    });  
+
+    // Move user into their newly created channel  
+    await member.voice.setChannel(tempChannel);  
+      
+    // Track channel and owner data  
+    activeTempChannels.set(tempChannel.id, member.id);  
+
+    // Update JSONBin storage  
+    const binData = await fetchJSONBin();  
+    if (!binData.channels) binData.channels = {};  
+    binData.channels[tempChannel.id] = {  
+      owner: member.id,  
+      createdAt: Date.now()  
+    };  
+    await updateJSONBin(binData);  
+
+    // Send Welcome Embed with Command List inside the new channel  
+    const controlEmbed = new EmbedBuilder()  
+      .setColor("#5865F2")  
+      .setTitle("🎙️ Temporary Voice Control Panel")  
+      .setDescription(`Welcome to your private room, ${member}! You are the **owner** of this channel.\n\nUse the commands below directly in chat to manage your room (Supports both mentions and name searches like \`vcadd rukia\`):`)  
+      .addFields(  
+        {  
+          name: "Available Voice Commands",  
+          value:  
+          "`vclock` - Lock your room\n" +  
+          "`vcunlock` - Unlock your room\n" +  
+          "`vchide` - Hide your room\n" +  
+          "`vcunhide` - Make your room visible\n" +  
+          "`vcname [name]` - Rename your room\n" +  
+          "`vclimit [number]` - Set user limit (0-99)\n" +  
+          "`vcadd @user/name` - Allow/add a user to your room\n" +  
+          "`vcremove @user/name` - Remove/revoke user access from your room\n" +  
+          "`vckick @user/name` - Kick a user from your room\n" +  
+          "`vcowner @user/name` - Transfer channel ownership",  
+          inline: false  
+        }  
+      )  
+      .setFooter({ text: "Pixel Villa Voice Master System" })  
+      .setTimestamp();  
+
+    // Send message to the channel  
+    await tempChannel.send({ content: `${member}`, embeds: [controlEmbed] });  
+
+  } catch (error) {  
+    console.error("Error creating temporary voice channel:", error);  
+  }  
+}  
+
+// Check if someone left a channel (Auto-delete with a 3-second delay if empty)  
+if (oldState.channelId) {  
+  const leftChannel = oldState.channel;  
     
-    // Check if query is an ID
-    const rawId = query.replace(/[<@!>]/g, "");
-    if (/^\d+$/.test(rawId)) {
-      const fetched = await message.guild.members.fetch(rawId).catch(() => null);
-      if (fetched) return fetched;
-    }
+  if (  
+    leftChannel &&   
+    leftChannel.members.size === 0 &&   
+    leftChannel.id !== CREATE_CHANNEL_ID &&  
+    leftChannel.parentId === TARGET_CATEGORY_ID  
+  ) {  
+    setTimeout(async () => {  
+      try {  
+        const fetchedChannel = await oldState.guild.channels.fetch(oldState.channelId).catch(() => null);  
+        if (fetchedChannel && fetchedChannel.members.size === 0) {  
+          await fetchedChannel.delete();  
+            
+          if (activeTempChannels.has(oldState.channelId)) {  
+            activeTempChannels.delete(oldState.channelId);  
+          }  
 
-    // Search by username, global name, or server nickname
-    await message.guild.members.fetch().catch(() => {}); // Ensure cache is populated
-    return message.guild.members.cache.find(m => 
-      m.user.username.toLowerCase().includes(query) ||
-      (m.user.globalName && m.user.globalName.toLowerCase().includes(query)) ||
-      (m.nickname && m.nickname.toLowerCase().includes(query))
-    );
-  }
+          const binData = await fetchJSONBin();  
+          if (binData.channels && binData.channels[oldState.channelId]) {  
+            delete binData.channels[oldState.channelId];  
+            await updateJSONBin(binData);  
+          }  
+        }  
+      } catch (error) {  
+        console.error("Error deleting empty temp channel after delay:", error);  
+      }  
+    }, 3000);  
+  }  
+}
 
-  // 1. Monitor Voice State Updates (Join to Create & Auto Delete)
-  client.on("voiceStateUpdate", async (oldState, newState) => {
-    const member = newState.member;
-    if (!member || member.user.bot) return;
+});
 
-    // User joined the "Join to Create" channel
-    if (newState.channelId === CREATE_CHANNEL_ID) {
-      try {
-        const guild = newState.guild;
-        const displayName = member.displayName || member.user.username;
-        const channelName = `${displayName}'s Room`;
+// 2. Handle Owner Customizations & Commands
+client.on("messageCreate", async (message) => {
+if (message.author.bot || !message.guild) return;
 
-        // Fetch the category to copy its permission overwrites if it exists
-        let categoryOverwrites = [];
-        if (TARGET_CATEGORY_ID) {
-          const categoryChannel = await guild.channels.fetch(TARGET_CATEGORY_ID).catch(() => null);
-          if (categoryChannel && categoryChannel.type === ChannelType.GuildCategory) {
-            // Map category overwrites to the format required by guild.channels.create
-            categoryOverwrites = categoryChannel.permissionOverwrites.cache.map(overwrite => ({
-              id: overwrite.id,
-              type: overwrite.type,
-              allow: overwrite.allow,
-              deny: overwrite.deny,
-            }));
-          }
-        }
+const rawContent = message.content.trim();  
+const words = rawContent.split(/ +/);  
+const command = words[0].toLowerCase();  
+const args = words.slice(1);  
 
-        // Define owner-specific overrides to ensure they have full management control
-        const ownerOverwrite = {
-          id: member.id,
-          allow: [
-            PermissionsBitField.Flags.Connect,
-            PermissionsBitField.Flags.ManageChannels,
-            PermissionsBitField.Flags.MuteMembers,
-            PermissionsBitField.Flags.DeafenMembers,
-            PermissionsBitField.Flags.MoveMembers,
-            PermissionsBitField.Flags.ViewChannel
-          ],
-        };
+const memberChannel = message.member.voice.channel;  
+if (!memberChannel || !activeTempChannels.has(memberChannel.id)) return;  
 
-        // Combine category overwrites with the owner's explicit overrides
-        const existingOwnerIndex = categoryOverwrites.findIndex(o => o.id === member.id);
-        if (existingOwnerIndex !== -1) {
-          const existing = categoryOverwrites[existingOwnerIndex];
-          const combinedAllow = new PermissionsBitField(existing.allow).add(ownerOverwrite.allow);
-          categoryOverwrites[existingOwnerIndex].allow = combinedAllow;
-        } else {
-          categoryOverwrites.push(ownerOverwrite);
-        }
+const ownerId = activeTempChannels.get(memberChannel.id);  
+const isOwner = ownerId === message.author.id;  
 
-        // Create the temporary voice channel with copied and custom overwrites
-        const tempChannel = await guild.channels.create({
-          name: channelName,
-          type: ChannelType.GuildVoice,
-          parent: TARGET_CATEGORY_ID || newState.channel?.parentId || null,
-          permissionOverwrites: categoryOverwrites,
-        });
+const notOwnerEmbed = new EmbedBuilder()  
+  .setColor("Red")  
+  .setDescription("❌ Only the **owner** of this temporary voice channel can use these controls.");  
 
-        // Move user into their newly created channel
-        await member.voice.setChannel(tempChannel);
-        activeTempChannels.set(tempChannel.id, member.id);
+// LOCK COMMAND  
+if (command === "vclock") {  
+  if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });  
+  await memberChannel.permissionOverwrites.edit(message.guild.id, { Connect: false });  
+  return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription("🔒 Voice channel has been **locked**.")] });  
+}  
 
-        // Send Welcome Embed with Command List inside the new channel
-        const controlEmbed = new EmbedBuilder()
-          .setColor("#5865F2")
-          .setTitle("🎙️ Temporary Voice Control Panel")
-          .setDescription(`Welcome to your private room, ${member}! You are the **owner** of this channel.\n\nUse the commands below directly in chat to manage your room (Supports both mentions and name searches like \`vcadd rukia\`):`)
-          .addFields(
-            {
-              name: "Available Voice Commands",
-              value:
-              "`vclock` - Lock your room\n" +
-              "`vcunlock` - Unlock your room\n" +
-              "`vchide` - Hide your room\n" +
-              "`vcunhide` - Make your room visible\n" +
-              "`vcname [name]` - Rename your room\n" +
-              "`vclimit [number]` - Set user limit (0-99)\n" +
-              "`vcadd @user/name` - Allow/add a user to your room\n" +
-              "`vcremove @user/name` - Remove/revoke user access from your room\n" +
-              "`vckick @user/name` - Kick a user from your room",
-              inline: false
-            }
-          )
-          .setFooter({ text: "Pixel Villa Voice Master System" })
-          .setTimestamp();
+// UNLOCK COMMAND  
+if (command === "vcunlock") {  
+  if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });  
+  await memberChannel.permissionOverwrites.edit(message.guild.id, { Connect: true });  
+  return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription("🔓 Voice channel has been **unlocked**.")] });  
+}  
 
-        // Send message to the channel
-        await tempChannel.send({ content: `${member}`, embeds: [controlEmbed] });
+// HIDE COMMAND  
+if (command === "vchide") {  
+  if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });  
+  await memberChannel.permissionOverwrites.edit(message.guild.id, { ViewChannel: false });  
+  return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription("🙈 Voice channel is now **hidden**.")] });  
+}  
 
-      } catch (error) {
-        console.error("Error creating temporary voice channel:", error);
-      }
-    }
+// UNHIDE COMMAND  
+if (command === "vcunhide") {  
+  if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });  
+  await memberChannel.permissionOverwrites.edit(message.guild.id, { ViewChannel: true });  
+  return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription("👁️ Voice channel is now **visible**.")] });  
+}  
 
-    // Check if someone left a channel (Auto-delete with a 3-second delay if empty)
-    if (oldState.channelId) {
-      const leftChannel = oldState.channel;
-      
-      if (
-        leftChannel && 
-        leftChannel.members.size === 0 && 
-        leftChannel.id !== CREATE_CHANNEL_ID &&
-        leftChannel.parentId === TARGET_CATEGORY_ID
-      ) {
-        // Wait 3 seconds to ensure it's truly abandoned (e.g. user is reconnecting or switching channels)
-        setTimeout(async () => {
-          try {
-            // Re-fetch channel to check if it's still empty after 3 seconds
-            const fetchedChannel = await oldState.guild.channels.fetch(oldState.channelId).catch(() => null);
-            if (fetchedChannel && fetchedChannel.members.size === 0) {
-              await fetchedChannel.delete();
-              if (activeTempChannels.has(oldState.channelId)) {
-                activeTempChannels.delete(oldState.channelId);
-              }
-            }
-          } catch (error) {
-            console.error("Error deleting empty temp channel after delay:", error);
-          }
-        }, 3000);
-      }
-    }
-  });
+// RENAME COMMAND  
+if (command === "vcname") {  
+  if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });  
+  const newName = args.join(" ");  
+  if (!newName) return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("⚠️ Please provide a new name. (e.g., `vcname Chill Lounge`)")] });  
+    
+  await memberChannel.setName(newName);  
+  return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription(`✏️ Channel renamed to **${newName}**.`)] });  
+}  
 
-  // 2. Handle Owner Customizations & Commands
-  client.on("messageCreate", async (message) => {
-    if (message.author.bot || !message.guild) return;
+// USER LIMIT COMMAND  
+if (command === "vclimit") {  
+  if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });  
+  const limit = parseInt(args[0], 10);  
+  if (isNaN(limit) || limit < 0 || limit > 99) {  
+    return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("⚠️ Please specify a valid limit between 0 and 99.")] });  
+  }  
 
-    const rawContent = message.content.trim();
-    const words = rawContent.split(/ +/);
-    const command = words[0].toLowerCase();
-    const args = words.slice(1);
+  await memberChannel.setUserLimit(limit);  
+  return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription(`👥 User limit set to **${limit === 0 ? "Unlimited" : limit}**.`)] });  
+}  
 
-    // Check if the user is currently in a temp channel and is the owner
-    const memberChannel = message.member.voice.channel;
-    if (!memberChannel || !activeTempChannels.has(memberChannel.id)) return;
+// ADD / PERMIT COMMAND  
+if (command === "vcadd") {  
+  if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });  
+  const targetMember = await findTargetMember(message, args);  
+    
+  if (!targetMember) {  
+    return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("⚠️ Please specify a valid user name or mention to add to your channel.")] });  
+  }  
 
-    const ownerId = activeTempChannels.get(memberChannel.id);
-    const isOwner = ownerId === message.author.id;
+  await memberChannel.permissionOverwrites.edit(targetMember.id, {   
+    Connect: true,   
+    ViewChannel: true   
+  });  
+  return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription(`✅ Added **${targetMember.user.tag}** to your channel permissions.`)] });  
+}  
 
-    const notOwnerEmbed = new EmbedBuilder()
-      .setColor("Red")
-      .setDescription("❌ Only the **owner** of this temporary voice channel can use these controls.");
+// REMOVE / REVOKE COMMAND  
+if (command === "vcremove") {  
+  if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });  
+  const targetMember = await findTargetMember(message, args);  
 
-    // LOCK COMMAND
-    if (command === "vclock") {
-      if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });
-      await memberChannel.permissionOverwrites.edit(message.guild.id, { Connect: false });
-      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription("🔒 Voice channel has been **locked**.")] });
-    }
+  if (!targetMember) {  
+    return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("⚠️ Please specify a valid user name or mention to remove from your channel permissions.")] });  
+  }  
 
-    // UNLOCK COMMAND
-    if (command === "vcunlock") {
-      if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });
-      await memberChannel.permissionOverwrites.edit(message.guild.id, { Connect: true });
-      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription("🔓 Voice channel has been **unlocked**.")] });
-    }
+  if (targetMember.id === ownerId) {  
+    return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("❌ You cannot remove permissions for yourself.")] });  
+  }  
 
-    // HIDE COMMAND
-    if (command === "vchide") {
-      if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });
-      await memberChannel.permissionOverwrites.edit(message.guild.id, { ViewChannel: false });
-      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription("🙈 Voice channel is now **hidden**.")] });
-    }
+  await memberChannel.permissionOverwrites.delete(targetMember.id).catch(() => {});  
+  return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription(`❌ Revoked channel permissions for **${targetMember.user.tag}**.`)] });  
+}  
 
-    // UNHIDE COMMAND
-    if (command === "vcunhide") {
-      if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });
-      await memberChannel.permissionOverwrites.edit(message.guild.id, { ViewChannel: true });
-      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription("👁️ Voice channel is now **visible**.")] });
-    }
+// KICK COMMAND  
+if (command === "vckick") {  
+  if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });  
+  const targetMember = await findTargetMember(message, args);  
 
-    // RENAME COMMAND
-    if (command === "vcname") {
-      if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });
-      const newName = args.join(" ");
-      if (!newName) return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("⚠️ Please provide a new name. (e.g., `vcname Chill Lounge`)")] });
-      
-      await memberChannel.setName(newName);
-      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription(`✏️ Channel renamed to **${newName}**.`)] });
-    }
+  if (!targetMember || targetMember.voice.channelId !== memberChannel.id) {  
+    return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("⚠️ Please specify a valid user who is currently inside your voice channel.")] });  
+  }  
 
-    // USER LIMIT COMMAND
-    if (command === "vclimit") {
-      if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });
-      const limit = parseInt(args[0], 10);
-      if (isNaN(limit) || limit < 0 || limit > 99) {
-        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("⚠️ Please specify a valid limit between 0 and 99.")] });
-      }
+  await targetMember.voice.disconnect();  
+  return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription(`👢 Kicked **${targetMember.user.tag}** from your channel.`)] });  
+}  
 
-      await memberChannel.setUserLimit(limit);
-      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription(`👥 User limit set to **${limit === 0 ? "Unlimited" : limit}**.`)] });
-    }
+// TRANSFER OWNERSHIP COMMAND (`vcowner`)  
+if (command === "vcowner") {  
+  if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });  
+  const targetMember = await findTargetMember(message, args);  
 
-    // ADD / PERMIT COMMAND (Supports Smart Search & Mentions)
-    if (command === "vcadd") {
-      if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });
-      const targetMember = await findTargetMember(message, args);
-      
-      if (!targetMember) {
-        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("⚠️ Please specify a valid user name or mention to add to your channel.")] });
-      }
+  if (!targetMember || targetMember.voice.channelId !== memberChannel.id) {  
+    return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("⚠️ Please specify a valid user who is currently inside your voice channel.")] });  
+  }  
 
-      await memberChannel.permissionOverwrites.edit(targetMember.id, { 
-        Connect: true, 
-        ViewChannel: true 
-      });
-      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription(`✅ Added **${targetMember.user.tag}** to your channel permissions.`)] });
-    }
+  if (targetMember.id === ownerId) {  
+    return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("⚠️ You are already the owner of this channel.")] });  
+  }  
 
-    // REMOVE / REVOKE COMMAND (Supports Smart Search & Mentions)
-    if (command === "vcremove") {
-      if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });
-      const targetMember = await findTargetMember(message, args);
+  try {  
+    // Do not delete the old owner's permission overwrite; only remove specific management permissions  
+    await memberChannel.permissionOverwrites.edit(ownerId, {  
+      ManageChannels: false,  
+      MoveMembers: false,  
+      MuteMembers: false,  
+      DeafenMembers: false  
+    }).catch(() => {});  
 
-      if (!targetMember) {
-        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("⚠️ Please specify a valid user name or mention to remove from your channel permissions.")] });
-      }
+    // Give the new owner full owner permissions  
+    await memberChannel.permissionOverwrites.edit(targetMember.id, {  
+      Connect: true,  
+      ViewChannel: true,  
+      ManageChannels: true,  
+      MoveMembers: true,  
+      MuteMembers: true,  
+      DeafenMembers: true  
+    });  
 
-      if (targetMember.id === ownerId) {
-        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("❌ You cannot remove permissions for yourself.")] });
-      }
+    // Update activeTempChannels map  
+    activeTempChannels.set(memberChannel.id, targetMember.id);  
 
-      await memberChannel.permissionOverwrites.delete(targetMember.id).catch(() => {});
-      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription(`❌ Revoked channel permissions for **${targetMember.user.tag}**.`)] });
-    }
+    // Update JSONBin owner data  
+    const binData = await fetchJSONBin();  
+    if (binData.channels && binData.channels[memberChannel.id]) {  
+      binData.channels[memberChannel.id].owner = targetMember.id;  
+      await updateJSONBin(binData);  
+    }  
 
-    // KICK COMMAND (Supports Smart Search & Mentions)
-    if (command === "vckick") {
-      if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });
-      const targetMember = await findTargetMember(message, args);
+    // Send success embed confirming ownership transfer  
+    const successEmbed = new EmbedBuilder()  
+      .setColor("Green")  
+      .setDescription(`👑 Channel ownership has been successfully transferred to ${targetMember}!`);  
 
-      if (!targetMember || targetMember.voice.channelId !== memberChannel.id) {
-        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("⚠️ Please specify a valid user who is currently inside your voice channel.")] });
-      }
+    return message.reply({ content: `${targetMember}`, embeds: [successEmbed] });  
+  } catch (error) {  
+    console.error("Error transferring ownership:", error);  
+    return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("❌ An error occurred while transferring ownership.")] });  
+  }  
+}
 
-      await targetMember.voice.disconnect();
-      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription(`👢 Kicked **${targetMember.user.tag}** from your channel.`)] });
-    }
-  });
+});
 };
