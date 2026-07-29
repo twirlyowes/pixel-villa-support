@@ -19,29 +19,32 @@ const activeTempChannels = new Map();
 
 // Helper functions for JSONBin API communication with error handling
 async function fetchJSONBin() {
-try {
-const response = await axios.get(https://api.jsonbin.io/v3/b/${BIN_ID}/latest, {
-headers: { "X-Master-Key": API_KEY }
-});
-return response.data.record || { channels: {} };
-} catch (error) {
-console.error("[JSONBin] Error fetching data:", error.message);
-return { channels: {} };
-}
+  try {
+    const response = await axios.get(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
+      headers: { 
+        "X-Master-Key": API_KEY 
+      }
+    });
+    return response.data.record || { channels: {} };
+  } catch (error) {
+    console.error("[JSONBin] Error fetching data:", error.message);
+    return { channels: {} };
+  }
 }
 
 async function updateJSONBin(data) {
-try {
-await axios.put(https://api.jsonbin.io/v3/b/${BIN_ID}, data, {
-headers: {
-"Content-Type": "application/json",
-"X-Master-Key": API_KEY
+  try {
+    await axios.put(`https://api.jsonbin.io/v3/b/${BIN_ID}`, data, {
+      headers: {
+        "Content-Type": "application/json",
+        "X-Master-Key": API_KEY
+      }
+    });
+  } catch (error) {
+    console.error("[JSONBin] Error updating data:", error.message);
+  }
 }
-});
-} catch (error) {
-console.error("[JSONBin] Error updating data:", error.message);
-}
-}
+
 
 module.exports = (client) => {
 
@@ -54,7 +57,7 @@ if (!binData.channels) binData.channels = {};
 let dataChanged = false;  
 
   for (const guild of client.guilds.cache.values()) {  
-    const channels = guild.channels.cache;  
+    const channels = await guild.channels.fetch();  
 
     // Restore active temporary channels from JSONBin into Map with thorough checks  
     for (const [channelId, channelData] of Object.entries(binData.channels)) {  
