@@ -12,10 +12,26 @@ const TARGET_CATEGORY_ID = "1531893602706526208"; // Optional: Put your temporar
 
 // --- JSONBIN CONFIGURATION ---
 const BIN_ID = "6a69f2dbf5f4af5e29d1274e";
-const API_KEY = "$2a$10$aCLBlkuqB51DVhDxNoqisureJOzr5ljUp6AyTncij4YryQSiAKPwa";
+const API_KEY = "$2a$10$aCLB1kuqB51DVhDxNoqisureJ0zr51jUp6AyTnnci4YryQSiAKPwa";
 
 // Active temporary channels tracker: Map<ChannelID, OwnerID>
 const activeTempChannels = new Map();
+
+// 2. Optimized VC Command Whitelist stored as a Set for O(1) lookups
+const VALID_VC_COMMANDS = new Set([
+  "vclock",
+  "vcunlock",
+  "vchide",
+  "vcunhide",
+  "vcname",
+  "vclimit",
+  "vcadd",
+  "vcremove",
+  "vckick",
+  "vcp",
+  "vcowner",
+  "vcsync"
+]);
 
 // Helper functions for JSONBin API communication with robust error handling and retries
 async function fetchJSONBin(retries = 3, delay = 2000) {
@@ -65,7 +81,7 @@ async function updateJSONBin(data, retries = 3, delay = 2000) {
 
 module.exports = (client) => {
 
-  // Startup safety check & JSONBin persistent channel restoration + Periodic Cleanup Interval
+  // 3. Safer startup cleanup: Only delete channels tracked in JSONBin storage
   client.once("ready", async () => {
     try {
       console.log(`[VoiceSystem] Bot logged in as ${client.user.tag}. Running startup sweep and restoration...`);
@@ -89,24 +105,10 @@ module.exports = (client) => {
             await targetChannel.delete().catch(() => {});  
             delete binData.channels[channelId];  
             dataChanged = true;  
-            console.log(`[VoiceSystem] Cleaned up orphaned empty temp channel on startup: ${targetChannel.name}`);  
+            console.log(`[VoiceSystem] Cleaned up tracked empty temp channel on startup: ${targetChannel.name}`);  
           } else {  
             activeTempChannels.set(channelId, channelData.owner);  
             console.log(`[VoiceSystem] Restored ownership for channel ID ${channelId} -> Owner ID: ${channelData.owner}`);
-          }  
-        }  
-
-        // Sweep unmapped empty channels in target category  
-        for (const channel of channels.values()) {  
-          if (channel.type === ChannelType.GuildVoice && channel.id !== CREATE_CHANNEL_ID) {  
-            if (TARGET_CATEGORY_ID && channel.parentId === TARGET_CATEGORY_ID && channel.members.size === 0) {  
-              await channel.delete().catch(() => {});  
-              if (binData.channels[channel.id]) {  
-                delete binData.channels[channel.id];  
-                dataChanged = true;  
-              }  
-              console.log(`[VoiceSystem] Cleaned up unmapped empty temp channel: ${channel.name}`);  
-            }  
           }  
         }  
       }  
@@ -117,41 +119,11 @@ module.exports = (client) => {
     } catch (err) {  
       console.error("Error during startup voice channel cleanup sweep & JSONBin sync:", err);  
     }
-
-    // Periodic Background Cleanup Sweep (runs every 5 minutes to prevent long-running drift)
-    setInterval(async () => {
-      try {
-        console.log("[VoiceSystem] Running periodic background cleanup sweep...");
-        const binData = await fetchJSONBin();
-        if (!binData.channels) return;
-
-        let periodicChanges = false;
-        for (const [channelId, channelData] of Object.entries(binData.channels)) {
-          for (const guild of client.guilds.cache.values()) {
-            const channel = await guild.channels.fetch(channelId).catch(() => null);
-            if (!channel || channel.members.size === 0) {
-              if (channel) {
-                await channel.delete().catch(() => {});
-              }
-              delete binData.channels[channelId];
-              activeTempChannels.delete(channelId);
-              periodicChanges = true;
-              console.log(`[VoiceSystem] Periodic sweep removed empty/dead channel: ${channelId}`);
-            }
-          }
-        }
-
-        if (periodicChanges) {
-          await updateJSONBin(binData);
-        }
-      } catch (periodicErr) {
-        console.error("[VoiceSystem] Error in periodic background cleanup sweep:", periodicErr);
-      }
-    }, 5 * 60 * 1000);
   });
 
-  // Helper function for smart user search (Mentions, User IDs, Usernames, or Nicknames)
+  // 4. Optimized findTargetMember function with tiered search strategy
   async function findTargetMember(message, args) {
+    // 1. Check Mention
     let targetMember = message.mentions.members.first();
     if (targetMember) return targetMember;
 
@@ -159,12 +131,22 @@ module.exports = (client) => {
 
     const query = args.join(" ").toLowerCase();  
       
+    // 2. Check User ID
     const rawId = query.replace(/[<@!>]/g, "");  
     if (/^\d+$/.test(rawId)) {  
       const fetched = await message.guild.members.fetch(rawId).catch(() => null);  
       if (fetched) return fetched;  
     }  
 
+    // 3. Search in cached members first
+    let cachedMatch = message.guild.members.cache.find(m =>   
+      m.user.username.toLowerCase().includes(query) ||  
+      (m.user.globalName && m.user.globalName.toLowerCase().includes(query)) ||  
+      (m.nickname && m.nickname.toLowerCase().includes(query))  
+    );
+    if (cachedMatch) return cachedMatch;
+
+    // 4. Fallback: Full guild members fetch only as a last resort
     await message.guild.members.fetch().catch(() => {});  
     return message.guild.members.cache.find(m =>   
       m.user.username.toLowerCase().includes(query) ||  
@@ -173,9 +155,12 @@ module.exports = (client) => {
     );
   }
 
+  // Track deletion actions to prevent duplicate deletion attempts
+  const deletionTracker = new Set();
+
   // 1. Monitor Voice State Updates (Join to Create & Auto Delete)
   client.on("voiceStateUpdate", async (oldState, newState) => {
-    const member = newState.member;
+    const member = newState.member || oldState.member;
     if (!member || member.user.bot) return;
 
     // User joined the "Join to Create" channel  
@@ -270,42 +255,41 @@ module.exports = (client) => {
       }  
     }  
 
-    // Check if someone left a channel (Auto-delete with a 3-second delay if empty)  
-    if (oldState.channelId) {  
+    // Check if someone left a channel (Instant event-driven auto-delete if empty)  
+    if (oldState.channelId && oldState.channelId !== newState.channelId) {  
       const leftChannel = oldState.channel;  
         
       if (  
         leftChannel &&   
         leftChannel.members.size === 0 &&   
         leftChannel.id !== CREATE_CHANNEL_ID &&  
-        leftChannel.parentId === TARGET_CATEGORY_ID  
+        leftChannel.parentId === TARGET_CATEGORY_ID &&
+        !deletionTracker.has(leftChannel.id)
       ) {  
-        setTimeout(async () => {  
-          try {  
-            const fetchedChannel = await oldState.guild.channels.fetch(oldState.channelId).catch(() => null);  
-            if (fetchedChannel && fetchedChannel.members.size === 0) {  
-              await fetchedChannel.delete().catch(() => {});  
-                
-              if (activeTempChannels.has(oldState.channelId)) {  
-                activeTempChannels.delete(oldState.channelId);  
-              }  
-
-              const binData = await fetchJSONBin();  
-              if (binData.channels && binData.channels[oldState.channelId]) {  
-                delete binData.channels[oldState.channelId];  
-                await updateJSONBin(binData);  
-              }  
-              console.log(`[VoiceSystem] Deleted empty temporary channel after delay: ${oldState.channelId}`);
-            }  
-          } catch (error) {  
-            console.error("Error deleting empty temp channel after delay:", error);  
+        deletionTracker.add(leftChannel.id);
+        try {  
+          await leftChannel.delete().catch(() => {});  
+            
+          if (activeTempChannels.has(leftChannel.id)) {  
+            activeTempChannels.delete(leftChannel.id);  
           }  
-        }, 3000);  
+
+          const binData = await fetchJSONBin();  
+          if (binData.channels && binData.channels[leftChannel.id]) {  
+            delete binData.channels[leftChannel.id];  
+            await updateJSONBin(binData);  
+          }  
+          console.log(`[VoiceSystem] Deleted empty temporary channel instantly: ${leftChannel.id}`);
+        } catch (error) {  
+          console.error("Error deleting empty temp channel:", error);  
+        } finally {
+          setTimeout(() => deletionTracker.delete(leftChannel.id), 10000);
+        }
       }  
     }
   });
 
-  // 2. Handle Owner Customizations & Commands
+  // 2. Handle Owner Customizations & Commands with Set Lookup & Early Ignoring
   client.on("messageCreate", async (message) => {
     if (message.author.bot || !message.guild) return;
 
@@ -313,6 +297,9 @@ module.exports = (client) => {
     const words = rawContent.split(/ +/);  
     const command = words[0].toLowerCase();  
     const args = words.slice(1);  
+
+    // Check whitelist using Set.has() and ignore non-VC messages before logging or processing
+    if (!VALID_VC_COMMANDS.has(command)) return;
 
     const memberChannel = message.member?.voice?.channel;  
     if (!memberChannel || !activeTempChannels.has(memberChannel.id)) return;  
@@ -422,7 +409,7 @@ module.exports = (client) => {
       return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription(`👢 Kicked **${targetMember.user.tag}** from your channel.`)] });  
     }  
 
-    // TRANSFER OWNERSHIP COMMAND (`vcowner`)  
+    // 1. FIXED: TRANSFER OWNERSHIP COMMAND (`vcowner`) using .setDescription() instead of .setItem()
     if (command === "vcowner") {  
       if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });  
       const targetMember = await findTargetMember(message, args);  
