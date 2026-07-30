@@ -11,7 +11,7 @@ const CREATE_CHANNEL_ID = "1522833037346214030";
 const TARGET_CATEGORY_ID = "1531893602706526208"; // Optional: Put your temporary category ID here so it only sweeps this category!
 
 // --- JSONBIN CONFIGURATION ---
-const BIN_ID = "6a69f2dbf5f4af5e29d1274e";
+const BIN_ID = "6a6b0441da38895dfea322da";
 const API_KEY = "$2a$10$aCLB1kuqB51DVhDxNoqisureJ0zr51jUp6AyTnnci4YryQSiAKPwa";
 
 // Active temporary channels tracker: Map<ChannelID, OwnerID>
