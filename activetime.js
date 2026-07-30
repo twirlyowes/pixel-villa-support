@@ -3,6 +3,7 @@ const { EmbedBuilder } = require("discord.js");
 
 const STAFF_ROLE_ID = "1511051007772069929"; 
 const LOG_CHANNEL_ID = "1523648445276098680"; 
+const ATLOGS_ROLE_ID = "1519005080471343216";
 
 // --- JSONBIN CONFIGURATION ---
 const BIN_ID = "6a61ab71da38895dfe82b0cc";
@@ -10,7 +11,15 @@ const API_KEY = "$2a$10$aCLBlkuqB51DVhDxNoqisureJOzr5ljUp6AyTncij4YryQSiAKPwa";
 // -----------------------------
 
 const activeSessions = new Map();
+const voiceSessions = new Map();
 let dailyActiveTimes = new Map();
+let dailyVoiceTimes = new Map();
+let dailyMessageCounts = new Map();
+let dailyCommandCounts = new Map();
+
+// --- JSONBIN SAVE LOCK / QUEUE SYSTEM ---
+let isSaving = false;
+let savePending = false;
 
 async function loadSavedTimes() {
   try {
@@ -19,25 +28,69 @@ async function loadSavedTimes() {
     });
     const data = await response.json();
     const json = data.record || {};
-    dailyActiveTimes = new Map(Object.entries(json).map(([k, v]) => [k, Number(v)]));
+    
+    dailyActiveTimes = new Map(Object.entries(json.activeTimes || {}).map(([k, v]) => [k, Number(v)]));
+    dailyVoiceTimes = new Map(Object.entries(json.voiceTimes || {}).map(([k, v]) => [k, Number(v)]));
+    dailyMessageCounts = new Map(Object.entries(json.messageCounts || {}).map(([k, v]) => [k, Number(v)]));
+    dailyCommandCounts = new Map(Object.entries(json.commandCounts || {}).map(([k, v]) => [k, Number(v)]));
   } catch (error) {
     console.error("Error reading from JSONBin:", error);
   }
 }
 
-async function saveTimesToFile() {
+async function executeSaveWithRetry() {
+  const delays = [10000, 30000, 60000];
+  const payload = {
+    activeTimes: Object.fromEntries(dailyActiveTimes),
+    voiceTimes: Object.fromEntries(dailyVoiceTimes),
+    messageCounts: Object.fromEntries(dailyMessageCounts),
+    commandCounts: Object.fromEntries(dailyCommandCounts)
+  };
+
+  for (let attempt = 0; attempt <= delays.length; attempt++) {
+    try {
+      const response = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Master-Key": API_KEY
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (response.ok) {
+        return true;
+      } else {
+        console.warn(`JSONBin save failed with HTTP status ${response.status} (Attempt ${attempt + 1})`);
+      }
+    } catch (error) {
+      console.warn(`JSONBin save threw an exception (Attempt ${attempt + 1}):`, error);
+    }
+
+    if (attempt < delays.length) {
+      await new Promise(resolve => setTimeout(resolve, delays[attempt]));
+    }
+  }
+
+  console.error("Permanent failure saving to JSONBin after all retries have been exhausted.");
+  return false;
+}
+
+async function saveTimesToFileWithQueue() {
+  if (isSaving) {
+    savePending = true;
+    return;
+  }
+
+  isSaving = true;
   try {
-    const obj = Object.fromEntries(dailyActiveTimes);
-    await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Master-Key": API_KEY
-      },
-      body: JSON.stringify(obj)
-    });
-  } catch (error) {
-    console.error("Error saving to JSONBin:", error);
+    await executeSaveWithRetry();
+  } finally {
+    isSaving = false;
+    if (savePending) {
+      savePending = false;
+      await saveTimesToFileWithQueue();
+    }
   }
 }
 
@@ -58,26 +111,28 @@ module.exports = (client) => {
           if (status !== "offline") {
             activeSessions.set(member.id, now);
           }
+          if (member.voice && member.voice.channel) {
+            voiceSessions.set(member.id, now);
+          }
         }
       });
     }
 
-    console.log(`[DEBUG] Initialized activeSessions size: ${activeSessions.size}, dailyActiveTimes size: ${dailyActiveTimes.size}`);
-
-    // Reliable clock checker for 3:00 AM IST report
     startClockChecker(client);
 
-    // Auto-update JSONBin every 5 minutes asynchronously without blocking loops
     setInterval(async () => {
       const currentTimestamp = Date.now();
       for (const [userId, startTime] of activeSessions.entries()) {
         const duration = currentTimestamp - startTime;
-        const currentTotal = dailyActiveTimes.get(userId) || 0;
-        dailyActiveTimes.set(userId, currentTotal + duration);
+        dailyActiveTimes.set(userId, (dailyActiveTimes.get(userId) || 0) + duration);
         activeSessions.set(userId, currentTimestamp);
       }
-      await saveTimesToFile();
-      console.log("Auto-synced active staff times to JSONBin (5-minute interval).");
+      for (const [userId, startTime] of voiceSessions.entries()) {
+        const duration = currentTimestamp - startTime;
+        dailyVoiceTimes.set(userId, (dailyVoiceTimes.get(userId) || 0) + duration);
+        voiceSessions.set(userId, currentTimestamp);
+      }
+      await saveTimesToFileWithQueue();
     }, 5 * 60 * 1000);
   });
 
@@ -86,25 +141,24 @@ module.exports = (client) => {
 
     setInterval(async () => {
       const now = new Date();
-      const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-      const istDate = new Date(utc + (3600000 * 5.5));
+      const hours = now.getUTCHours();
+      const minutes = now.getUTCMinutes();
+      const currentDateString = now.toISOString().split("T")[0];
 
-      const hours = istDate.getHours();
-      const minutes = istDate.getMinutes();
-      const currentDateString = istDate.toISOString().split("T")[0];
-
-      if (hours === 3 && minutes === 0 && lastLoggedDate !== currentDateString) {
+      if (hours === 21 && minutes === 30 && lastLoggedDate !== currentDateString) {
         lastLoggedDate = currentDateString;
         
         const guild = clientInstance.guilds.cache.first();
         if (guild) {
           await sendDailyReport(guild);
           
-          // Reset data at 3:05 AM IST (5 minutes after report)
           setTimeout(async () => {
             dailyActiveTimes.clear();
-            await saveTimesToFile();
-            console.log("Daily active times data has been safely cleared and saved to JSONBin 5 minutes after report.");
+            dailyVoiceTimes.clear();
+            dailyMessageCounts.clear();
+            dailyCommandCounts.clear();
+            await saveTimesToFileWithQueue();
+            console.log("Daily tracking data has been safely cleared and saved to JSONBin.");
           }, 5 * 60 * 1000);
         }
       }
@@ -112,67 +166,87 @@ module.exports = (client) => {
   }
 
   async function sendDailyReport(guild) {
-    console.log("[DEBUG] sendDailyReport() function was called.");
     try {
-      console.log(`[DEBUG] Attempting to fetch log channel with ID: ${LOG_CHANNEL_ID} in guild: ${guild.name}`);
-      const channel = await guild.channels.fetch(LOG_CHANNEL_ID).catch((fetchErr) => {
-        console.error("[DEBUG] Exact channel fetch error stack trace:", fetchErr);
-        return null;
-      });
-
-      if (!channel) {
-        console.error(`[DEBUG] Failed to fetch log channel. Channel ID ${LOG_CHANNEL_ID} might be invalid or bot lacks permissions.`);
-        return;
-      }
-      console.log(`[DEBUG] Successfully fetched log channel: ${channel.name} (${channel.id})`);
+      const channel = await guild.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
+      if (!channel) return;
 
       const now = Date.now();
       for (const [userId, startTime] of activeSessions.entries()) {
-        const duration = now - startTime;
-        const currentTotal = dailyActiveTimes.get(userId) || 0;
-        dailyActiveTimes.set(userId, currentTotal + duration);
+        dailyActiveTimes.set(userId, (dailyActiveTimes.get(userId) || 0) + (now - startTime));
         activeSessions.set(userId, now);
       }
+      for (const [userId, startTime] of voiceSessions.entries()) {
+        dailyVoiceTimes.set(userId, (dailyVoiceTimes.get(userId) || 0) + (now - startTime));
+        voiceSessions.set(userId, now);
+      }
 
-      console.log(`[DEBUG] dailyActiveTimes size before building report: ${dailyActiveTimes.size}`);
-      console.log(`[DEBUG] dailyActiveTimes contents:`, Object.fromEntries(dailyActiveTimes));
+      const allStaffIds = new Set([
+        ...dailyActiveTimes.keys(),
+        ...dailyVoiceTimes.keys(),
+        ...dailyMessageCounts.keys(),
+        ...dailyCommandCounts.keys()
+      ]);
 
-      const embed = new EmbedBuilder()
-        .setColor("#5865F2")
-        .setTitle("Daily Staff Activity Report (3:00 AM IST)")
-        .setDescription("Here is the total active online time recorded for staff members over the past 24 hours:")
-        .setTimestamp();
+      const sortedStaff = Array.from(allStaffIds).sort((a, b) => {
+        return (dailyActiveTimes.get(b) || 0) - (dailyActiveTimes.get(a) || 0);
+      });
 
-      let reportText = "";
-
-      if (dailyActiveTimes.size === 0) {
-        reportText = "No active staff time recorded today.";
+      let reportLines = [];
+      if (sortedStaff.length === 0) {
+        reportLines.push("No active staff activity recorded today.");
       } else {
-        for (const [userId, totalTime] of dailyActiveTimes.entries()) {
-          const totalSeconds = Math.floor(totalTime / 1000);
-          const hours = Math.floor(totalSeconds / 3600);
-          const minutes = Math.floor((totalSeconds % 3600) / 60);
-          
-          reportText += `<@${userId}>: **${hours}h ${minutes}m**\n`;
+        for (const userId of sortedStaff) {
+          const activeTime = dailyActiveTimes.get(userId) || 0;
+          const voiceTime = dailyVoiceTimes.get(userId) || 0;
+          const messages = dailyMessageCounts.get(userId) || 0;
+          const commands = dailyCommandCounts.get(userId) || 0;
+
+          const actSec = Math.floor(activeTime / 1000);
+          const actH = Math.floor(actSec / 3600);
+          const actM = Math.floor((actSec % 3600) / 60);
+          const actS = actSec % 60;
+
+          const voiceSec = Math.floor(voiceTime / 1000);
+          const voiceH = Math.floor(voiceSec / 3600);
+          const voiceM = Math.floor((voiceSec % 3600) / 60);
+          const voiceS = voiceSec % 60;
+
+          reportLines.push(`<@${userId}> | Online: **${actH}h ${actM}m ${actS}s** | Voice: **${voiceH}h ${voiceM}m ${voiceS}s** | Messages: **${messages}** | Commands: **${commands}**`);
         }
       }
 
-      if (!reportText) reportText = "No active staff time recorded today.";
+      const embeds = [];
+      let currentFieldValue = "";
+      let isFirstEmbed = true;
 
-      // Handle safety check if text exceeds Discord embed field limit (1024 chars)
-      if (reportText.length > 1024) {
-        reportText = reportText.substring(0, 1021) + "...";
+      for (const line of reportLines) {
+        if ((currentFieldValue + line + "\n").length > 1024) {
+          const embed = new EmbedBuilder()
+            .setColor("#5865F2")
+            .setTitle(isFirstEmbed ? "Daily Staff Activity Report (3:00 AM IST)" : "Daily Staff Activity Report (continued)")
+            .setDescription(currentFieldValue)
+            .setTimestamp();
+          embeds.push(embed);
+          isFirstEmbed = false;
+          currentFieldValue = "";
+        }
+        currentFieldValue += line + "\n";
       }
 
-      embed.addFields({ name: "Staff Durations", value: reportText, inline: false });
-      
-      console.log("[DEBUG] About to send embed via channel.send()");
-      await channel.send({ embeds: [embed] });
-      console.log("[DEBUG] Successfully sent embed via channel.send()");
+      const finalEmbed = new EmbedBuilder()
+        .setColor("#5865F2")
+        .setTitle(isFirstEmbed ? "Daily Staff Activity Report (3:00 AM IST)" : "Daily Staff Activity Report (continued)")
+        .setDescription(currentFieldValue)
+        .setTimestamp();
+      embeds.push(finalEmbed);
 
-      await saveTimesToFile();
+      for (const emb of embeds) {
+        await channel.send({ embeds: [emb] });
+      }
+
+      await saveTimesToFileWithQueue();
     } catch (err) {
-      console.error("[DEBUG] Error sending daily staff activity report - Full Stack Trace:", err);
+      console.error("Error sending daily report:", err);
     }
   }
 
@@ -191,17 +265,34 @@ module.exports = (client) => {
       if (!activeSessions.has(userId)) {
         activeSessions.set(userId, Date.now());
       }
-    } 
-    else if (!isNowActive && wasActive) {
+    } else if (!isNowActive && wasActive) {
       if (activeSessions.has(userId)) {
-        const startTime = activeSessions.get(userId);
-        const duration = Date.now() - startTime;
-        
-        const currentTotal = dailyActiveTimes.get(userId) || 0;
-        dailyActiveTimes.set(userId, currentTotal + duration);
-        
+        const duration = Date.now() - activeSessions.get(userId);
+        dailyActiveTimes.set(userId, (dailyActiveTimes.get(userId) || 0) + duration);
         activeSessions.delete(userId);
-        saveTimesToFile();
+        saveTimesToFileWithQueue();
+      }
+    }
+  });
+
+  client.on("voiceStateUpdate", (oldState, newState) => {
+    const member = newState.member || oldState.member;
+    if (!member || member.user.bot || !isStaff(member)) return;
+
+    const userId = member.id;
+    const oldChannel = oldState.channelId;
+    const newChannel = newState.channelId;
+
+    if (!oldChannel && newChannel) {
+      if (!voiceSessions.has(userId)) {
+        voiceSessions.set(userId, Date.now());
+      }
+    } else if (oldChannel && !newChannel) {
+      if (voiceSessions.has(userId)) {
+        const duration = Date.now() - voiceSessions.get(userId);
+        dailyVoiceTimes.set(userId, (dailyVoiceTimes.get(userId) || 0) + duration);
+        voiceSessions.delete(userId);
+        saveTimesToFileWithQueue();
       }
     }
   });
@@ -209,21 +300,35 @@ module.exports = (client) => {
   client.on("messageCreate", async (message) => {
     if (message.author.bot || !message.guild) return;
 
+    const member = message.member;
+    if (member && isStaff(member)) {
+      const userId = member.id;
+      dailyMessageCounts.set(userId, (dailyMessageCounts.get(userId) || 0) + 1);
+    }
+
     const rawContent = message.content.trim();
     const words = rawContent.split(/ +/);
-    const command = words.shift().toLowerCase();
+    const commandName = words.shift().toLowerCase();
 
-    // FORCE LOG COMMAND: atlogs (No prefix, Administrator only)
-    if (command === "atlogs") {
-      if (!message.member.permissions.has("Administrator")) {
-        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("❌ You need Administrator permissions to force-log staff activity.")] });
+    const modCommands = [".warn", ".mute", ".unmute", ".kick", ".ban", ".unban", ".nick", ".wlist", ".wremove", ".wreset"];
+    if (modCommands.includes(commandName) && member && isStaff(member)) {
+      const userId = member.id;
+      dailyCommandCounts.set(userId, (dailyCommandCounts.get(userId) || 0) + 1);
+    }
+
+    if (commandName === "atlogs") {
+      const hasAdmin = message.member.permissions.has("Administrator");
+      const hasRole = message.member.roles.cache.has(ATLOGS_ROLE_ID);
+
+      if (!hasAdmin && !hasRole) {
+        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("❌ You do not have permission to use this command.")] });
       }
       await message.reply("🔄 Generating and sending the staff activity report now...");
       await sendDailyReport(message.guild);
       return;
     }
 
-    if (command === "activetime") {
+    if (commandName === "activetime") {
       let targetMember = message.mentions.members.first();
 
       if (!targetMember && words.length > 0) {
@@ -243,26 +348,62 @@ module.exports = (client) => {
       }
 
       const userId = targetMember.id;
-      let totalTime = dailyActiveTimes.get(userId) || 0;
-      
+      const now = Date.now();
+
+      let totalActive = dailyActiveTimes.get(userId) || 0;
       if (activeSessions.has(userId)) {
-        totalTime += (Date.now() - activeSessions.get(userId));
-      } else {
-        const currentStatus = targetMember.presence ? targetMember.presence.status : "offline";
-        if (currentStatus !== "offline") {
-          activeSessions.set(userId, Date.now());
-        }
+        totalActive += (now - activeSessions.get(userId));
+      } else if (targetMember.presence && targetMember.presence.status !== "offline") {
+        activeSessions.set(userId, now);
       }
 
-      const totalSeconds = Math.floor(totalTime / 1000);
-      const hours = Math.floor(totalSeconds / 3600);
-      const minutes = Math.floor((totalSeconds % 3600) / 60);
-      const seconds = totalSeconds % 60;
+      let totalVoice = dailyVoiceTimes.get(userId) || 0;
+      if (voiceSessions.has(userId)) {
+        totalVoice += (now - voiceSessions.get(userId));
+      } else if (targetMember.voice && targetMember.voice.channel) {
+        voiceSessions.set(userId, now);
+      }
+
+      const messages = dailyMessageCounts.get(userId) || 0;
+      const commands = dailyCommandCounts.get(userId) || 0;
+
+      const actSec = Math.floor(totalActive / 1000);
+      const actH = Math.floor(actSec / 3600);
+      const actM = Math.floor((actSec % 3600) / 60);
+      const actS = actSec % 60;
+
+      const voiceSec = Math.floor(totalVoice / 1000);
+      const voiceH = Math.floor(voiceSec / 3600);
+      const voiceM = Math.floor((voiceSec % 3600) / 60);
+      const voiceS = voiceSec % 60;
+
+      let currentSessionStr = "Not Active";
+      if (activeSessions.has(userId)) {
+        const sessionSec = Math.floor((now - activeSessions.get(userId)) / 1000);
+        const sH = Math.floor(sessionSec / 3600);
+        const sM = Math.floor((sessionSec % 3600) / 60);
+        const sS = sessionSec % 60;
+        currentSessionStr = `${sH}h ${sM}m ${sS}s`;
+      }
+
+      const status = targetMember.presence ? targetMember.presence.status : "offline";
+      let statusFormatted = "🔴 Offline";
+      if (status === "online") statusFormatted = "🟢 Online";
+      else if (status === "idle") statusFormatted = "🟡 Idle";
+      else if (status === "dnd") statusFormatted = "🔴 Do Not Disturb";
 
       const embed = new EmbedBuilder()
         .setColor("#5865F2")
         .setTitle("Staff Active Time Tracker (Today)")
-        .setDescription(`Active presence duration for staff **${targetMember.user.username}**:\n\n**${hours} hours, ${minutes} minutes, ${seconds} seconds**`)
+        .setDescription(
+          `👤 Staff Name: **${targetMember.user.username}**\n` +
+          `🟢 Online Time: **${actH}h ${actM}m ${actS}s**\n` +
+          `🎤 Voice Time: **${voiceH}h ${voiceM}m ${voiceS}s**\n` +
+          `⌨️ Commands: **${commands}**\n` +
+          `💬 Messages: **${messages}**\n` +
+          `🟢 Status: **${statusFormatted}**\n` +
+          `⏳ Current Session: **${currentSessionStr}**`
+        )
         .setTimestamp();
 
       return message.reply({ embeds: [embed] });
