@@ -558,26 +558,39 @@ module.exports = (client) => {
       return interaction.reply({ content: "❌ Only the owner can use these controls.", ephemeral: true });
     }
 
-    if (interaction.customId === "modal_vc_rename") {
-      const newName = interaction.fields.getTextInputValue("input_channel_name");
-      await renameVoice(memberChannel, newName);
-      return interaction.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription(`✏️ Channel renamed to **${newName}**.`)] , ephemeral: true});
-    }
-
-    if (interaction.customId === "modal_vc_limit") {
-      const limitVal = parseInt(interaction.fields.getTextInputValue("input_user_limit"), 10);
-      if (isNaN(limitVal) || limitVal < 0 || limitVal > 99) {
-        return interaction.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("⚠️ Please specify a valid limit between 0 and 99.")], ephemeral: true });
-      }
-      await limitVoice(memberChannel, limitVal);
-      return interaction.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription(`👥 User limit set to **${limitVal === 0 ? "Unlimited" : limitVal}**.`)] , ephemeral: true});
-    }
-
     if (interaction.customId === "modal_vc_add") {
-      const query = interaction.fields.getTextInputValue("input_target_user");
-      targetMember);  
-      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription(`✅ Added **${targetMember.user.tag}** to your channel permissions.`)] });  
-    }  
+  const query = interaction.fields.getTextInputValue("input_target_user");
+
+  const targetMember = await findTargetMember(
+    interaction.guild,
+    query
+  );
+
+  if (!targetMember) {
+    return interaction.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setColor("Red")
+          .setDescription("⚠️ Please specify a valid user name or mention.")
+      ],
+      ephemeral: true
+    });
+  }
+
+  await memberChannel.permissionOverwrites.edit(targetMember.id, {
+    Connect: true,
+    ViewChannel: true
+  });
+
+  return interaction.reply({
+    embeds: [
+      new EmbedBuilder()
+        .setColor("Green")
+        .setDescription(`✅ Added **${targetMember.user.tag}** to your channel permissions.`)
+    ],
+    ephemeral: true
+  });
+    }
 
     // REMOVE COMMAND  
     if (command === "vcremove") {  
