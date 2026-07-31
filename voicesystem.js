@@ -360,7 +360,7 @@ module.exports = (client) => {
       }  
 
       await memberChannel.setUserLimit(limit);  
-      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription(`👥 User limit set to **${limit === 0 ? "Unlimited" : limit}**.`)] });  
+      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription(`<:limit:1532340516249931826> User limit set to **${limit === 0 ? "Unlimited" : limit}**.`)] });  
     }  
 
     // ADD / PERMIT COMMAND  
@@ -376,7 +376,7 @@ module.exports = (client) => {
         Connect: true,   
         ViewChannel: true   
       });  
-      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription(`✅ Added **${targetMember.user.tag}** to your channel permissions.`)] });  
+      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription(`<:add:1532337807765278801> Added **${targetMember.user.tag}** to your channel permissions.`)] });  
     }  
 
     // REMOVE / REVOKE COMMAND  
@@ -393,7 +393,7 @@ module.exports = (client) => {
       }  
 
       await memberChannel.permissionOverwrites.delete(targetMember.id).catch(() => {});  
-      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription(`❌ Revoked channel permissions for **${targetMember.user.tag}**.`)] });  
+      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription(`<:remove:1532337229907759124> Revoked channel permissions for **${targetMember.user.tag}**.`)] });  
     }  
 
     // KICK COMMAND  
@@ -406,7 +406,7 @@ module.exports = (client) => {
       }  
 
       await targetMember.voice.disconnect();  
-      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription(`👢 Kicked **${targetMember.user.tag}** from your channel.`)] });  
+      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription(`<:kick:1532337429426471044> Kicked **${targetMember.user.tag}** from your channel.`)] });  
     }  
 
     // 1. FIXED: TRANSFER OWNERSHIP COMMAND (`vcowner`) using .setDescription() instead of .setItem()
@@ -450,7 +450,7 @@ module.exports = (client) => {
 
         const successEmbed = new EmbedBuilder()  
           .setColor("Green")  
-          .setDescription(`👑 Channel ownership has been successfully transferred to ${targetMember}!`);  
+          .setDescription(`<:owner:1532337324762075146> Channel ownership has been successfully transferred to ${targetMember}!`);  
 
         return message.reply({ content: `${targetMember}`, embeds: [successEmbed] });  
       } catch (error) {  
