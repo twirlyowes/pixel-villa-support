@@ -317,28 +317,28 @@ module.exports = (client) => {
     if (command === "vclock") {  
       if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });  
       await memberChannel.permissionOverwrites.edit(message.guild.id, { Connect: false });  
-      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription("🔒 Voice channel has been **locked**.")] });  
+      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription("<:lock:1532337641494937651> Voice channel has been **locked**.")] });  
     }  
 
     // UNLOCK COMMAND  
     if (command === "vcunlock") {  
       if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });  
       await memberChannel.permissionOverwrites.edit(message.guild.id, { Connect: true });  
-      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription("🔓 Voice channel has been **unlocked**.")] });  
+      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription("<:unlock:1532337553217294528> Voice channel has been **unlocked**.")] });  
     }  
 
     // HIDE COMMAND  
     if (command === "vchide") {  
       if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });  
       await memberChannel.permissionOverwrites.edit(message.guild.id, { ViewChannel: false });  
-      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription("🙈 Voice channel is now **hidden**.")] });  
+      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription("<:hide:1532336151854190743> Voice channel is now **hidden**.")] });  
     }  
 
     // UNHIDE COMMAND  
     if (command === "vcunhide") {  
       if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });  
       await memberChannel.permissionOverwrites.edit(message.guild.id, { ViewChannel: true });  
-      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription("👁️ Voice channel is now **visible**.")] });  
+      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription("<:unhide:1532336276164841482> Voice channel is now **visible**.")] });  
     }  
 
     // RENAME COMMAND  
@@ -348,7 +348,7 @@ module.exports = (client) => {
       if (!newName) return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("⚠️ Please provide a new name. (e.g., `vcname Chill Lounge`)")] });  
         
       await memberChannel.setName(newName);  
-      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription(`✏️ Channel renamed to **${newName}**.`)] });  
+      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription(`<:name:1532337141214871622> Channel renamed to **${newName}**.`)] });  
     }  
 
     // USER LIMIT COMMAND  
