@@ -255,40 +255,72 @@ module.exports = (client) => {
       }  
     }  
 
-    // Check if someone left a channel (Instant event-driven auto-delete if empty)  
-    if (oldState.channelId && oldState.channelId !== newState.channelId) {  
-      const leftChannel = oldState.channel;  
-        
-      if (  
-        leftChannel &&   
-        leftChannel.members.size === 0 &&   
-        leftChannel.id !== CREATE_CHANNEL_ID &&  
-        leftChannel.parentId === TARGET_CATEGORY_ID &&
-        !deletionTracker.has(leftChannel.id)
-      ) {  
-        deletionTracker.add(leftChannel.id);
-        try {  
-          await leftChannel.delete().catch(() => {});  
-            
-          if (activeTempChannels.has(leftChannel.id)) {  
-            activeTempChannels.delete(leftChannel.id);  
-          }  
+    // Check if someone left a channel (Reliable instant auto-delete)
+if (oldState.channelId && oldState.channelId !== newState.channelId) {
+  const channelId = oldState.channelId;
 
-          const binData = await fetchJSONBin();  
-          if (binData.channels && binData.channels[leftChannel.id]) {  
-            delete binData.channels[leftChannel.id];  
-            await updateJSONBin(binData);  
-          }  
-          console.log(`[VoiceSystem] Deleted empty temporary channel instantly: ${leftChannel.id}`);
-        } catch (error) {  
-          console.error("Error deleting empty temp channel:", error);  
-        } finally {
-          setTimeout(() => deletionTracker.delete(leftChannel.id), 10000);
+  if (
+    channelId !== CREATE_CHANNEL_ID &&
+    !deletionTracker.has(channelId)
+  ) {
+    deletionTracker.add(channelId);
+
+    setTimeout(async () => {
+      try {
+        const leftChannel = await oldState.guild.channels.fetch(channelId).catch(() => null);
+
+        if (
+          !leftChannel ||
+          leftChannel.type !== ChannelType.GuildVoice ||
+          leftChannel.parentId !== TARGET_CATEGORY_ID
+        ) {
+          return;
         }
-      }  
-    }
-  });
 
+        // Re-check multiple times because Discord voice cache can lag
+        let attempts = 0;
+        while (attempts < 5) {
+          const refreshedChannel = await oldState.guild.channels.fetch(channelId).catch(() => null);
+
+          if (!refreshedChannel) return;
+
+          if (refreshedChannel.members.size === 0) {
+            break;
+          }
+
+          attempts++;
+
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+
+        const finalChannel = await oldState.guild.channels.fetch(channelId).catch(() => null);
+
+        if (!finalChannel || finalChannel.members.size > 0) {
+          return;
+        }
+
+        await finalChannel.delete().catch(() => {});
+
+        activeTempChannels.delete(channelId);
+
+        const binData = await fetchJSONBin();
+
+        if (binData.channels?.[channelId]) {
+          delete binData.channels[channelId];
+          await updateJSONBin(binData);
+        }
+
+        console.log(`[VoiceSystem] Deleted empty temporary channel: ${channelId}`);
+
+      } catch (err) {
+        console.error("[VoiceSystem] Auto delete error:", err);
+      } finally {
+        deletionTracker.delete(channelId);
+      }
+
+    }, 500);
+  }
+        }
   // 2. Handle Owner Customizations & Commands with Set Lookup & Early Ignoring
   client.on("messageCreate", async (message) => {
     if (message.author.bot || !message.guild) return;
