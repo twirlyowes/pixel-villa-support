@@ -257,53 +257,56 @@ client.on("messageCreate", async (message) => {
     }
 
     // 4. VOICE CHANNEL PULL (VCP) COMMAND (No Prefix)
-    if (command === "vcp") {
-      const user = message.mentions.members.first();
+if (command === "vcp") {
+  const search = args.join(" ").trim().toLowerCase();
 
-      if (!user) {
-        return message.reply({
-          embeds: [makeEmbed("Red", "Please mention a user. (e.g., `vcp @user`)")]
-        });
-      }
+  const user =
+    message.mentions.members.first() ||
+    message.guild.members.cache.get(search) ||
+    message.guild.members.cache.find(member =>
+      member.user.username.toLowerCase().includes(search)
+    ) ||
+    message.guild.members.cache.find(member =>
+      member.displayName.toLowerCase().includes(search)
+    );
 
-      if (!message.member.permissions.has(PermissionsBitField.Flags.MoveMembers)) {
-        return message.reply({
-          embeds: [makeEmbed("Red", "You need the **Move Members** permission.")]
-        });
-      }
-
-      const voiceChannel = message.member.voice.channel;
-      if (!voiceChannel) {
-        return message.reply({
-          embeds: [makeEmbed("Red", "You must be sitting inside a voice channel to pull someone.")]
-        });
-      }
-
-      if (!user.voice.channel) {
-        return message.reply({
-          embeds: [makeEmbed("Red", "That user isn't connected to any voice channel right now.")]
-        });
-      }
-
-      await user.voice.setChannel(voiceChannel);
-
-      const embed = makeEmbed(
-        "Green",
-        `Pulled **${user.user.tag}** into your voice channel.\n\n**Moderator:** ${message.author.tag}`
-      );
-
-      await message.reply({ embeds: [embed] });
-      await sendLog(message.guild, embed);
-    }
-
-  } catch (error) {
-    console.error(`Command Error Encountered (${command}):`, error);
-    message.reply({
-      embeds: [makeEmbed("Red", "Something went sideways while running that command.")]
-    }).catch(() => {});
+  if (!user) {
+    return message.reply({
+      embeds: [makeEmbed("Red", "Please mention a valid user or provide part of their username/display name. (e.g., `vcp @user`, `vcp Celestial`, or `vcp cele`)")]
+    });
   }
-});
 
+  if (!message.member.permissions.has(PermissionsBitField.Flags.MoveMembers)) {
+    return message.reply({
+      embeds: [makeEmbed("Red", "You need the **Move Members** permission.")]
+    });
+  }
+
+  const voiceChannel = message.member.voice.channel;
+
+  if (!voiceChannel) {
+    return message.reply({
+      embeds: [makeEmbed("Red", "You must be sitting inside a voice channel to pull someone.")]
+    });
+  }
+
+  if (!user.voice.channel) {
+    return message.reply({
+      embeds: [makeEmbed("Red", "That user isn't connected to any voice channel right now.")]
+    });
+  }
+
+  await user.voice.setChannel(voiceChannel);
+
+  const embed = makeEmbed(
+    "Green",
+    `Pulled **${user.user.tag}** into your voice channel.\n\n**Moderator:** ${message.author.tag}`
+  );
+
+  await message.reply({ embeds: [embed] });
+  await sendLog(message.guild, embed);
+}
+    
 console.log("Loading help...");
 require("./help")(client);
 
