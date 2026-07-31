@@ -306,6 +306,13 @@ if (command === "vcp") {
   await message.reply({ embeds: [embed] });
   await sendLog(message.guild, embed);
 }
+      } catch (error) {
+    console.error(`Command Error Encountered (${command}):`, error);
+    message.reply({
+      embeds: [makeEmbed("Red", "Something went sideways while running that command.")]
+    }).catch(() => {});
+  }
+});
     
 console.log("Loading help...");
 require("./help")(client);
