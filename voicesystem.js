@@ -315,12 +315,12 @@ if (oldState.channelId && oldState.channelId !== newState.channelId) {
       } catch (err) {
         console.error("[VoiceSystem] Auto delete error:", err);
       } finally {
-        deletionTracker.delete(channelId);
+                deletionTracker.delete(channelId);
       }
 
-        }, 500);
+    }, 500);
   }
-}
+});
   // 2. Handle Owner Customizations & Commands with Set Lookup & Early Ignoring
   client.on("messageCreate", async (message) => {
     if (message.author.bot || !message.guild) return;
