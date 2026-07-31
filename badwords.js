@@ -91,28 +91,12 @@ module.exports = (client) => {
 // ==========================================
 if (isStaff) return;
 
-// Normalize message
-const normalized = message.content
-    .toLowerCase()
-    .replace(/[@4]/g, "a")
-    .replace(/[3]/g, "e")
-    .replace(/[1!|]/g, "i")
-    .replace(/[0]/g, "o")
-    .replace(/[5$]/g, "s")
-    .replace(/[7+]/g, "t")
-    .replace(/[^a-z]/g, "")          // Remove spaces, dots, _, -, etc.
-    .replace(/(.)\1+/g, "$1");       // Compress repeated letters
+const normalized = message.content.toLowerCase();
 
 let found = false;
 
 for (const word of badWordsCache) {
-    // Create a regex that allows unlimited repeated letters
-    const pattern = word
-        .split("")
-        .map(char => `${char}+`)
-        .join("");
-
-    const regex = new RegExp(pattern, "i");
+    const regex = new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
 
     if (regex.test(normalized)) {
         found = true;
@@ -121,6 +105,7 @@ for (const word of badWordsCache) {
 }
 
 if (!found) return;
+
             const deletedMessage = message.content;
 
             // Delete offensive message safely
