@@ -88,23 +88,39 @@ module.exports = (client) => {
 
             // ==========================================
             // MODULE 2: BAD WORD FILTER (Skips Staff)
-            // ==========================================
-            if (isStaff) return;
+// ==========================================
+if (isStaff) return;
 
-            // Check the message against cached filter entries
-            const contentLower = message.content.toLowerCase();
-            let found = false;
+// Normalize message
+const normalized = message.content
+    .toLowerCase()
+    .replace(/[@4]/g, "a")
+    .replace(/[3]/g, "e")
+    .replace(/[1!|]/g, "i")
+    .replace(/[0]/g, "o")
+    .replace(/[5$]/g, "s")
+    .replace(/[7+]/g, "t")
+    .replace(/[^a-z]/g, "")          // Remove spaces, dots, _, -, etc.
+    .replace(/(.)\1+/g, "$1");       // Compress repeated letters
 
-            for (const word of badWordsCache) {
-                const regex = new RegExp(`(^|\\s|[.,!?])${word}($|\\s|[.,!?])`, "i");
-                if (regex.test(contentLower)) {
-                    found = true;
-                    break;
-                }
-            }
+let found = false;
 
-            if (!found) return;
+for (const word of badWordsCache) {
+    // Create a regex that allows unlimited repeated letters
+    const pattern = word
+        .split("")
+        .map(char => `${char}+`)
+        .join("");
 
+    const regex = new RegExp(pattern, "i");
+
+    if (regex.test(normalized)) {
+        found = true;
+        break;
+    }
+}
+
+if (!found) return;
             const deletedMessage = message.content;
 
             // Delete offensive message safely
