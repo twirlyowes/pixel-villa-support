@@ -176,48 +176,70 @@ module.exports = (client) => {
         await message.channel.send({ embeds: [embed] });
       }
 
-      // 3. REMOVE SINGLE WARNING COMMAND (.wremove)
-      if (command === "wremove") {
-        const user = message.mentions.members.find(m => message.content.includes(m.id));
+      // 3. REMOVE SPECIFIC WARNING COMMAND (.wremove)
+if (command === "wremove") {
+  const user = message.mentions.members.first();
 
-        if (!user) {
-          return message.channel.send({
-            embeds: [makeEmbed("Red", `**Usage:** ${PREFIX}wremove @user`)]
-          });
-        }
-        const warnings = await getWarnings();
+  if (!user) {
+    return message.channel.send({
+      embeds: [makeEmbed("Red", `**Usage:** ${PREFIX}wremove @user <warning ID>`)]
+    });
+  }
 
-        if (!warnings[user.id] || warnings[user.id].length === 0) {
-          return message.channel.send({
-            embeds: [makeEmbed("Red", `**${user.user.tag}** doesn't have any warnings to remove.`)]
-          });
-        }
+  const warnId = args[1];
 
-        const removed = warnings[user.id].pop();
+  if (!warnId) {
+    return message.channel.send({
+      embeds: [makeEmbed("Red", `**Please provide a Warning ID.**\n\nUsage: \`${PREFIX}wremove @user <warning ID>\``)]
+    });
+  }
 
-        if (warnings[user.id].length === 0) {
-          delete warnings[user.id];
-        }
+  const warnings = await getWarnings();
 
-        await saveWarnings(warnings);
-        const embed = makeEmbed(
-          "Green",
-          `Removed the most recent warning (ID: ${removed.id || "N/A"}) from **${user.user.tag}**.\n\n**Removed Reason:** ${removed.reason}\n**Moderator:** ${message.author.tag}`
-        );
-        await message.channel.send({ embeds: [embed] });
+  if (!warnings[user.id] || warnings[user.id].length === 0) {
+    return message.channel.send({
+      embeds: [makeEmbed("Red", `**${user.user.tag}** doesn't have any warnings to remove.`)]
+    });
+  }
 
-        // FIX: Fetch the channel asynchronously instead of relying purely on memory cache
-        if (config.LOG_CHANNEL_ID) {
-          try {
-            const logChannel = await message.guild.channels.fetch(config.LOG_CHANNEL_ID);
-            if (logChannel) {
-              await logChannel.send({ embeds: [embed] });
-            }
-          } catch (err) {
-            console.error("Failed to fetch or send to log channel:", err);
-          }
-        }
+  const warnIndex = warnings[user.id].findIndex(w => w.id === warnId);
+
+  if (warnIndex === -1) {
+    return message.channel.send({
+      embeds: [makeEmbed("Red", `No warning found with ID **${warnId}**.`)]
+    });
+  }
+
+  const removed = warnings[user.id].splice(warnIndex, 1)[0];
+
+  if (warnings[user.id].length === 0) {
+    delete warnings[user.id];
+  }
+
+  await saveWarnings(warnings);
+
+  const embed = makeEmbed(
+    "Green",
+    `Successfully removed warning **${removed.id}** from **${user.user.tag}**.\n\n` +
+    `**Reason:** ${removed.reason}\n` +
+    `**Originally Warned By:** ${removed.moderator}\n` +
+    `**Removed By:** ${message.author.tag}`
+  );
+
+  await message.channel.send({ embeds: [embed] });
+
+  // Send to log channel
+  if (config.LOG_CHANNEL_ID) {
+    try {
+      const logChannel = await message.guild.channels.fetch(config.LOG_CHANNEL_ID);
+      if (logChannel) {
+        await logChannel.send({ embeds: [embed] });
       }
+    } catch (err) {
+      console.error("Failed to send warning removal log:", err);
+    }
+  }
+    }      
 
       // 4. RESET ALL WARNINGS COMMAND (.wreset)
       if (command === "wreset") {
