@@ -387,26 +387,56 @@ module.exports = (client) => {
       }
 
       const status = targetMember.presence ? targetMember.presence.status : "offline";
-      let statusFormatted = "🔴 Offline";
-      if (status === "online") statusFormatted = "🟢 Online";
-      else if (status === "idle") statusFormatted = "🟡 Idle";
-      else if (status === "dnd") statusFormatted = "🔴 Do Not Disturb";
 
-      const embed = new EmbedBuilder()
-        .setColor("#5865F2")
-        .setTitle("Staff Active Time Tracker (Today)")
-        .setDescription(
-          `👤 Staff Name: **${targetMember.user.username}**\n` +
-          `🟢 Online Time: **${actH}h ${actM}m ${actS}s**\n` +
-          `🎤 Voice Time: **${voiceH}h ${voiceM}m ${voiceS}s**\n` +
-          `⌨️ Commands: **${commands}**\n` +
-          `💬 Messages: **${messages}**\n` +
-          `🟢 Status: **${statusFormatted}**\n` +
-          `⏳ Current Session: **${currentSessionStr}**`
-        )
-        .setTimestamp();
+let statusFormatted = "<a:error:1532986765105696778> Offline";
+if (status === "online") statusFormatted = "<a:ONLINE:1532986890519711815> Online";
+else if (status === "idle") statusFormatted = "<a:Warning:1532986372716236932> Idle";
+else if (status === "dnd") statusFormatted = "<a:error:1532986765105696778> Do Not Disturb";
 
-      return message.reply({ embeds: [embed] });
+const embed = new EmbedBuilder()
+    .setColor("#5865F2")
+    .setAuthor({
+        name: "Pixel Villa Support • Activity Tracker",
+        iconURL: client.user.displayAvatarURL()
+    })
+    .setThumbnail(targetMember.user.displayAvatarURL({ dynamic: true }))
+    .setDescription(
+`<:Shield_2:1532989398642327594> **Staff Activity Report**
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+<a:ONLINE:1532986890519711815> **Staff Member**
+> ${targetMember}
+
+<a:Clock:1532990759371018372> **Online Time**
+> ${actH}h ${actM}m ${actS}s
+
+<a:voice:1532987137199440003> **Voice Time**
+> ${voiceH}h ${voiceM}m ${voiceS}s
+
+<:Stats:1532990723408793661> **Commands Used**
+> ${commands}
+
+<a:LP_Message:1532991009066324049> **Messages Sent**
+> ${messages}
+
+<a:ONLINE:1532986890519711815> **Current Status**
+> ${statusFormatted}
+
+<a:Clock:1532990759371018372> **Current Session**
+> ${currentSessionStr}
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+<a:sparkles:1532986077651140620> Activity statistics for today.
+`
+    )
+    .setFooter({
+        text: "Pixel Villa Support • Activity Module"
+    })
+    .setTimestamp();
+
+return message.reply({ embeds: [embed] });
     }
   });
 };
