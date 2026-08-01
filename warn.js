@@ -181,7 +181,7 @@ module.exports = (client) => {
     ]
   });
         }
-        }
+        
         const embed = new EmbedBuilder()
   .setColor("#F1C40F")
   .setAuthor({
