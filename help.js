@@ -35,53 +35,54 @@ Use the categories below to explore all available commands.
     )
     .addFields(
         {
-            name: "<a:ban:1532989769766801511> Moderation",
+            name: "<a:ban:1532989769766801511> Moderation Commands",
             value:
-            "```" +
-            ".warn\n" +
-            ".mute\n" +
-            ".unmute\n" +
-            ".kick\n" +
-            ".ban\n" +
-            ".unban\n" +
-            ".nick\n" +
-            ".lock\n" +
-            ".unlock\n" +
-            ".hide\n" +
-            ".unhide\n" +
-            ".wlist\n" +
-            ".wremove\n" +
-            ".wreset" +
-            "```",
-            inline: true
+"```" +
+".warn\n" +
+".mute\n" +
+".unmute\n" +
+".kick\n" +
+".ban\n" +
+".unban\n" +
+".nick\n" +
+".lock\n" +
+".unlock\n" +
+".hide\n" +
+".unhide\n" +
+".wlist\n" +
+".wremove\n" +
+".wreset" +
+"```",
+            inline: false
         },
         {
-            name: "<a:settings:1532990547394957393> Management",
+            name: "<a:settings:1532990547394957393> Management Commands",
             value:
-            "```" +
-            "role" +
-            "```",
-            inline: true
+"```" +
+"role" +
+"```",
+            inline:false
         },
         {
-            name: "<:terminal:1532991459005829264> Utility",
+            name: "<:terminal:1532991459005829264> Utility Commands",
             value:
-            "```" +
-            "purge\n" +
-            "afk\n" +
-            "help\n" +
-            "ui\n" +
-            "si\n" +
-            "wiki\n" +
-            "calculate" +
-            "```",
+"```" +
+"purge\n" +
+"afk\n" +
+"help\n" +
+"ui\n" +
+"si\n" +
+"wiki\n" +
+"calculate" +
+"```",
             inline: false
         }
     )
     .setFooter({
-        text: "Pixel Villa Support • Developed with ❤️"
+        text: "Pixel Villa Support • Help Module"
     })
     .setTimestamp();
+             
             return message.reply({ embeds: [helpEmbed] });
 
         } catch (error) {
