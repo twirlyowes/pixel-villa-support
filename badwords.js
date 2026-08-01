@@ -112,9 +112,23 @@ if (!found) return;
             await message.delete().catch(() => {});
 
             // Send temporary channel warning
-            const warn = await message.channel.send(
-                `${message.author}, your message was removed because it contained a prohibited word.`
-            ).catch(() => null);
+            const warn = await message.channel.send({
+    embeds: [
+        new EmbedBuilder()
+            .setColor("#F1C40F")
+            .setAuthor({
+                name: "Pixel Villa Support • Auto Moderation",
+                iconURL: client.user.displayAvatarURL()
+            })
+            .setDescription(
+`<a:Warning:1532986372716236932> ${message.author}
+
+Your message has been removed because it contained a prohibited word.
+
+Please follow the server rules and keep the chat respectful.`
+            )
+    ]
+}).catch(() => null);
 
             if (warn) {
                 setTimeout(() => {
@@ -124,22 +138,45 @@ if (!found) return;
 
             // Send logging payload
             const logChannel = message.guild.channels.cache.get(config.LOG_CHANNEL_ID);
-            if (logChannel) {
-                const embed = new EmbedBuilder()
-                    .setTitle("Bad Word Detected")
-                    .setColor("#E74C3C") // Red
-                    .addFields(
-                        { name: "User", value: `${message.author} (${message.author.id})` },
-                        { name: "Channel", value: `${message.channel}` },
-                        { name: "Message", value: deletedMessage.slice(0, 1024) }
-                    )
-                    .setTimestamp();
 
-                logChannel.send({ embeds: [embed] }).catch(() => {});
-            }
+if (logChannel) {
+    const embed = new EmbedBuilder()
+        .setColor("#ED4245")
+        .setAuthor({
+            name: "Pixel Villa Support • Auto Moderation",
+            iconURL: client.user.displayAvatarURL()
+        })
+        .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
+        .setDescription(
+`<a:Warning:1532986372716236932> **Prohibited Word Detected**
 
-        } catch (error) {
-            console.error("Filter System Error:", error);
-        }
-    });
+━━━━━━━━━━━━━━━━━━━━━━
+
+<:Shield_2:1532989398642327594> **User**
+> ${message.author} (\`${message.author.id}\`)
+
+<:HOME:1532991400503673055> **Channel**
+> ${message.channel}
+
+<a:LP_Message:1532991009066324049> **Deleted Message**
+\`\`\`
+${deletedMessage.slice(0, 1000)}
+\`\`\`
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+<a:error:1532986765105696778> The message has been automatically removed by the filter.`
+        )
+        .setFooter({
+            text: "Pixel Villa Support • Moderation Logs"
+        })
+        .setTimestamp();
+
+    logChannel.send({ embeds: [embed] }).catch(() => {});
+}
+
+} catch (error) {
+    console.error("Filter System Error:", error);
+}
+});
 };
