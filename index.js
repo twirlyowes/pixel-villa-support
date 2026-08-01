@@ -108,7 +108,7 @@ client.once("ready", () => {
         type: ActivityType.Watching,
       },
     ],
-    status: "online",
+    status: "idle",
   });
 });
 
