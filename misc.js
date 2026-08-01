@@ -22,14 +22,29 @@ module.exports = (client) => {
     // 1. IP COMMAND (Exact match "ip")
     // ==========================
     if (rawContent.toLowerCase() === "ip") {
-      return message.reply(
-        "** Pixel Villa Server IP**\n\n" +
-        "** Java Edition**\n" +
-        "`mc.pixelvilla.fun:25575`\n\n" +
-        "** Bedrock Edition**\n" +
-        "**IP:** `mc.pixelvilla.fun`\n" +
-        "**Port:** `25575`"
-      );
+  const embed = new EmbedBuilder()
+    .setColor("#5865F2")
+    .setAuthor({
+      name: "Pixel Villa Support • Server Information",
+      iconURL: client.user.displayAvatarURL()
+    })
+    .setTitle("<:HOME:1532991400503673055> Pixel Villa Server IP")
+    .setDescription(
+`<a:sparkles:1532986077651140620> **Java Edition**
+<:Link:1532991169984991302> **Address:** \`mc.pixelvilla.fun\`
+<:terminal:1532991459005829264> **Port:** \`25575\`
+
+<a:sparkles:1532986077651140620> **Bedrock Edition**
+<:Link:1532991169984991302> **IP:** \`mc.pixelvilla.fun\`
+<:terminal:1532991459005829264> **Port:** \`25575\``
+    )
+    .setFooter({
+      text: `Requested by ${message.author.tag}`,
+      iconURL: message.author.displayAvatarURL({ dynamic: true })
+    })
+    .setTimestamp();
+
+  return message.reply({ embeds: [embed] });
     }
 
     const tokens = rawContent.split(/ +/);
@@ -60,11 +75,18 @@ module.exports = (client) => {
         const avatarURL = targetUser.displayAvatarURL({ size: 4096, dynamic: true });
 
         const embed = new EmbedBuilder()
-          .setColor("#5865F2")
-          .setTitle(`${targetUser.username}'s Avatar`)
-          .setImage(avatarURL)
-          .setFooter({ text: `Requested by ${message.author.tag}`, iconURL: message.author.displayAvatarURL({ dynamic: true }) })
-          .setTimestamp();
+  .setColor("#5865F2")
+  .setAuthor({
+    name: `${targetUser.tag}`,
+    iconURL: targetUser.displayAvatarURL({ dynamic: true })
+  })
+  .setTitle("Avatar")
+  .setImage(avatarURL)
+  .setFooter({
+    text: `Requested by ${message.author.tag}`,
+    iconURL: message.author.displayAvatarURL({ dynamic: true })
+  })
+  .setTimestamp();
 
         const row = new ActionRowBuilder().addComponents(
           new ButtonBuilder().setLabel("PNG Format").setStyle(ButtonStyle.Link).setURL(targetUser.displayAvatarURL({ extension: "png", size: 4096 })),
@@ -418,79 +440,169 @@ return message.reply({ embeds: [uiEmbed] });
       // 9. HIDE COMMAND (".hide")
       // ==========================
       if (firstWord === ".hide") {
-        if (!message.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
-          return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("❌ You need Manage Channels permission to hide this channel.")] });
-        }
+  if (!message.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
+    return message.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setColor("#ED4245")
+          .setDescription("<a:error:1532986765105696778> You need the **Manage Channels** permission to use this command.")
+      ]
+    });
+  }
 
-        try {
-          await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, { ViewChannel: false });
-          await message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription("🔒 This channel has been hidden from regular members.")] });
-        } catch (err) {
-          await message.reply("❌ Failed to hide the channel.");
+  try {
+    await message.channel.permissionOverwrites.edit(
+      message.guild.roles.everyone,
+      { ViewChannel: false }
+    );
+
+    await message.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setColor("#57F287")
+          .setDescription("<:hide:1532336151854190743> This channel is now hidden from **@everyone**.")
+      ]
+    });
+  } catch (err) {
+    await message.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setColor("#ED4245")
+          .setDescription("<a:error:1532986765105696778> Failed to hide this channel.")
+      ]
+    });
+  }
+
+  return;
         }
-        return;
-      }
 
       // ==========================
       // 10. UNHIDE COMMAND (".unhide")
       // ==========================
-      if (firstWord === ".unhide") {
-        if (!message.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
-          return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("❌ You need Manage Channels permission to unhide this channel.")] });
-        }
+     if (firstWord === ".unhide") {
+  if (!message.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
+    return message.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setColor("#ED4245")
+          .setDescription("<a:error:1532986765105696778> You need the **Manage Channels** permission to use this command.")
+      ]
+    });
+  }
 
-        try {
-          await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, { ViewChannel: null });
-          await message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription("🔓 This channel is now visible to regular members.")] });
-        } catch (err) {
-          await message.reply("❌ Failed to unhide the channel.");
-        }
-        return;
-      }
+  try {
+    await message.channel.permissionOverwrites.edit(
+      message.guild.roles.everyone,
+      { ViewChannel: null }
+    );
+
+    await message.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setColor("#57F287")
+          .setDescription("<:unhide:1532336276164841482> This channel is now visible to **@everyone**.")
+      ]
+    });
+  } catch (err) {
+    await message.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setColor("#ED4245")
+          .setDescription("<a:error:1532986765105696778> Failed to unhide this channel.")
+      ]
+    });
+  }
+
+  return;
+       }
 
       // ==========================
-      // 11. SAY COMMAND (".say")
-      // ==========================
-      if (firstWord === ".say") {
-        if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
-          return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("❌ You need Manage Messages permission to use .say.")] });
-        }
+// 11. SAY COMMAND (".say")
+// ==========================
+if (firstWord === ".say") {
+  if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
+    return message.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setColor("#ED4245")
+          .setDescription("<a:error:1532986765105696778> You need the **Manage Messages** permission to use this command.")
+      ]
+    });
+  }
 
-        const text = words.join(" ");
-        if (!text) {
-          return message.reply("⚠️ Please provide text for the bot to say.");
-        }
+  const text = words.join(" ");
 
-        await message.delete().catch(() => {});
+  if (!text) {
+    return message.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setColor("#FEE75C")
+          .setDescription("<a:Warning:1532986372716236932> Please provide a message for me to send.")
+      ]
+    });
+  }
 
-        const sayEmbed = new EmbedBuilder()
-          .setColor("#5865F2")
-          .setDescription(text)
-          .setTimestamp();
+  await message.delete().catch(() => {});
 
-        return message.channel.send({ embeds: [sayEmbed] });
-      }
+  const sayEmbed = new EmbedBuilder()
+    .setColor("#5865F2")
+    .setDescription(text)
+    .setTimestamp();
 
-      // ==========================
-      // 12. CALCULATE COMMAND ("calculate")
-      // ==========================
-      if (command === "calculate") {
-        const expr = words.join("");
-        if (!expr) {
-          return message.reply("⚠️ Please provide a math expression to calculate. Example: `calculate 5+5*2`");
-        }
+  return message.channel.send({ embeds: [sayEmbed] });
+}
 
-        if (!/^[0-9+\-*/().\s]+$/.test(expr)) {
-          return message.reply("❌ Invalid characters in expression. Only basic arithmetic (+, -, *, /, parentheses) is allowed.");
-        }
+// ==========================
+// 12. CALCULATE COMMAND ("calculate")
+// ==========================
+if (command === "calculate") {
+  const expr = words.join("");
 
-        try {
-          const result = Function(`'use strict'; return (${expr})`)();
-          return message.reply(`🧮 Result: **${result}**`);
-        } catch (err) {
-          return message.reply("❌ Error evaluating the mathematical expression.");
-        }
-      }
+  if (!expr) {
+    return message.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setColor("#FEE75C")
+          .setDescription("<a:Warning:1532986372716236932> Please provide a mathematical expression.\nExample: `calculate 5+5*2`")
+      ]
+    });
+  }
+
+  if (!/^[0-9+\-*/().\s]+$/.test(expr)) {
+    return message.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setColor("#ED4245")
+          .setDescription("<a:error:1532986765105696778> Invalid characters detected.\nOnly `+ - * / ( )` and numbers are allowed.")
+      ]
+    });
+  }
+
+  try {
+    const result = Function(`'use strict'; return (${expr})`)();
+
+    return message.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setColor("#57F287")
+          .setDescription(
+`<:Stats:1532990723408793661> **Calculator**
+
+**Expression:** \`${expr}\`
+**Result:** \`${result}\``)
+          .setTimestamp()
+      ]
+    });
+  } catch {
+    return message.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setColor("#ED4245")
+          .setDescription("<a:error:1532986765105696778> Failed to evaluate the mathematical expression.")
+      ]
+    });
+  }
+}
 
       // ==========================
       // STICKY ENGINE CHECK
@@ -502,19 +614,33 @@ return message.reply({ embeds: [uiEmbed] });
 
       try {
         if (stickyData.lastMessageId) {
-          const oldMsg = await message.channel.messages.fetch(stickyData.lastMessageId).catch(() => null);
+          const oldMsg = await message.channel.messages
+            .fetch(stickyData.lastMessageId)
+            .catch(() => null);
+
           if (oldMsg) {
             await oldMsg.delete().catch(() => {});
           }
         }
 
         const embed = new EmbedBuilder()
-          .setColor("Blurple")
-          .setDescription(`Notice\n\n${stickyData.text}`)
-          .setFooter({ text: "Pinned Message" });
+          .setColor("#5865F2")
+          .setDescription(
+`<a:LP_Message:1532991009066324049> **Sticky Message**
 
-        const newMsg = await message.channel.send({ embeds: [embed] });
+${stickyData.text}`
+          )
+          .setFooter({
+            text: "Pinned Message"
+          })
+          .setTimestamp();
+
+        const newMsg = await message.channel.send({
+          embeds: [embed]
+        });
+
         stickyData.lastMessageId = newMsg.id;
+
       } finally {
         stickyData.lock = false;
       }
