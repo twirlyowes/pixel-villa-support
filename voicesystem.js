@@ -224,29 +224,41 @@ module.exports = (client) => {
         };  
         await updateJSONBin(binData);  
 
-        const controlEmbed = new EmbedBuilder()  
-          .setColor("#5865F2")  
-          .setTitle("🎙️ Temporary Voice Control Panel")  
-          .setDescription(`Welcome to your private room, ${member}! You are the **owner** of this channel.\n\nUse the commands below directly in chat to manage your room (Supports both mentions and name searches like \`vcadd rukia\`):`)  
-          .addFields(  
-            {  
-              name: "Available Voice Commands",  
-              value:  
-              "`vclock` - Lock your room\n" +  
-              "`vcunlock` - Unlock your room\n" +  
-              "`vchide` - Hide your room\n" +  
-              "`vcunhide` - Make your room visible\n" +  
-              "`vcname [name]` - Rename your room\n" +  
-              "`vclimit [number]` - Set user limit (0-99)\n" +  
-              "`vcadd @user/name` - Allow/add a user to your room\n" +  
-              "`vcremove @user/name` - Remove/revoke user access from your room\n" +  
-              "`vckick @user/name` - Kick a user from your room\n" +  
-              "`vcowner @user/name` - Transfer channel ownership",  
-              inline: false  
-            }  
-          )  
-          .setFooter({ text: "Pixel Villa Voice Master System" })  
-          .setTimestamp();  
+        const controlEmbed = new EmbedBuilder()
+  .setColor("#5865F2")
+  .setAuthor({
+    name: "Pixel Villa Support • Voice System",
+    iconURL: client.user.displayAvatarURL()
+  })
+  .setTitle("🎙️ Temporary Voice Control Panel")
+  .setDescription(
+`${member}, welcome to your private voice channel!
+
+<:Shield_2:1532989398642327594> **Channel Owner**
+> ${member}
+
+<a:settings:1532990547394957393> **Manage your room using these commands:**
+`
+  )
+  .addFields({
+    name: "<a:sparkles:1532986077651140620> Voice Commands",
+    value:
+"`vclock` • Lock your room\n" +
+"`vcunlock` • Unlock your room\n" +
+"`vchide` • Hide your room\n" +
+"`vcunhide` • Show your room\n" +
+"`vcname [name]` • Rename channel\n" +
+"`vclimit [number]` • Set user limit\n" +
+"`vcadd @user` • Allow user\n" +
+"`vcremove @user` • Remove user\n" +
+"`vckick @user` • Kick user\n" +
+"`vcowner @user` • Transfer ownership",
+    inline: false
+  })
+  .setFooter({
+    text: "Pixel Villa Support • Voice Management"
+  })
+  .setTimestamp();  
 
         await tempChannel.send({ content: `${member}`, embeds: [controlEmbed] });  
 
