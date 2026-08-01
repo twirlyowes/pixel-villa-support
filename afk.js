@@ -70,94 +70,139 @@ module.exports = (client) => {
             // MODULE 1: CHECK MENTIONS FIRST                 
             // ==========================================                                                       
             if (message.mentions.users.size > 0) {
-                const mentions = [];
+    const mentions = [];
 
-                message.mentions.users.forEach(user => {                                                                
-                    if (user.id === message.author.id) return; // Ignore self pings                 
-                    const data = afkData.get(user.id);
-                    if (data) {
-                        mentions.push(                                        
-                            `**${user.username}** is currently away:\n` +
-                            `Reason: ${data.reason}\n` +
-                            `Since: ${formatTime(data.time)}`
-                        );
-                    }
-                });
-                                                                  
-                if (mentions.length > 0) {
-                    const embed = new EmbedBuilder()
-                        .setColor("#e67e22") // Warm Orange
-                        .setTitle("Status: Away")
-                        .setDescription(mentions.join("\n\n"))                                                              
-                        .setTimestamp();          
-                    
-                    return message.channel.send({
-                        embeds: [embed]
-                    });                                           
-                }
-            }                                                                                                   
-            
+    message.mentions.users.forEach(user => {
+        if (user.id === message.author.id) return; // Ignore self mentions
+
+        const data = afkData.get(user.id);
+
+        if (data) {
+            mentions.push(
+`<a:Moon:1532988257338527835> **${user.username} is currently AFK**
+
+<a:LP_Message:1532991009066324049> **Reason**
+> ${data.reason}
+
+<a:Clock:1532990759371018372> **Away Since**
+> ${formatTime(data.time)}`
+            );
+        }
+    });
+
+    if (mentions.length > 0) {
+        const embed = new EmbedBuilder()
+            .setColor("#F1C40F")
+            .setAuthor({
+                name: "Pixel Villa Support • AFK",
+                iconURL: client.user.displayAvatarURL()
+            })
+            .setDescription(
+`${mentions.join("\n\n━━━━━━━━━━━━━━━━━━━━━━\n\n")}
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+<a:sparkles:1532986077651140620> They will be notified that you mentioned them once they return.`
+            )
+            .setFooter({
+                text: "Pixel Villa Support • AFK Module"
+            })
+            .setTimestamp();
+
+        return message.channel.send({
+            embeds: [embed]
+        });
+    }
+            }
             // ==========================================
             // MODULE 2: SET AFK STATUS
             // ==========================================
-            if (lowerContent.startsWith("afk")) {                 
-                const reason = content.slice(3).trim() || "No reason provided";                                     
-                const time = Date.now();
+           if (lowerContent.startsWith("afk")) {
+    const reason = content.slice(3).trim() || "No reason provided";
+    const time = Date.now();
 
-                afkData.set(message.author.id, {
-                    reason,
-                    time,                                             
-                    setupAt: time
-                });                                               
-                await saveAFK();
+    afkData.set(message.author.id, {
+        reason,
+        time,
+        setupAt: time
+    });
 
-                const embed = new EmbedBuilder()
-                    .setColor("#f1c40f") // Yellow                    
-                    .setAuthor({
-                        name: `${message.author.username} is now AFK`,                                                      
-                        iconURL: message.author.displayAvatarURL({ dynamic: true, extension: 'png' })
-                    })                                                
-                    .setDescription(`Status updated successfully.`)
-                    .addFields(
-                        { name: "Reason", value: `\`\`\`${reason}\`\`\``, inline: false },                                  
-                        { name: "Set At", value: formatTime(time), inline: false }
-                    )
-                    .setFooter({ text: "I will notify users who mention you." })
-                    .setTimestamp();
+    await saveAFK();
 
-                return message.channel.send({ embeds: [embed] });
-            }
+    const embed = new EmbedBuilder()
+        .setColor("#F1C40F")
+        .setAuthor({
+            name: message.author.username,
+            iconURL: message.author.displayAvatarURL({ dynamic: true })
+        })
+        .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
+        .setDescription(
+`<a:Moon:1532988257338527835> **AFK Enabled**
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+Your AFK status has been enabled successfully.
+
+<a:LP_Message:1532991009066324049> **Reason**
+> ${reason}
+
+<a:Clock:1532990759371018372> **Started**
+> ${formatTime(time)}
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+<a:sparkles:1532986077651140620> Anyone who mentions you will automatically receive your AFK status until you send another message.`
+        )
+        .setFooter({
+            text: "Pixel Villa Support • AFK Module"
+        })
+        .setTimestamp();
+
+    return message.channel.send({
+        embeds: [embed]
+    });
+           }
                                                               
             // ==========================================                                                       
             // MODULE 3: CLEAR AFK ON MESSAGE
             // ==========================================
-            if (afkData.has(message.author.id)) {                 
-                const data = afkData.get(message.author.id);
-                                                                  
-                // 2 second safety window check                   
-                if (Date.now() - data.setupAt > 2000) {
-                    const duration = formatDuration(Date.now() - data.time);
+            if (afkData.has(message.author.id)) {
+    const data = afkData.get(message.author.id);
 
-                    afkData.delete(message.author.id);
-                    await saveAFK();                                                                                          
-                    
-                    const embed = new EmbedBuilder()                                                                        
-                        .setColor("#2ecc71") // Green                                                                       
-                        .setAuthor({
-                            name: `Welcome back, ${message.author.username}!`,
-                            iconURL: message.author.displayAvatarURL({ dynamic: true, extension: 'png' })                                                                     
-                        })
-                        .setDescription(`Your AFK status has been cleared.`)                                                
-                        .addFields(
-                            { name: "You were gone for", value: `\`${duration}\``, inline: true }
-                        )
-                        .setTimestamp();
-                                                                      
-                    return message.channel.send({ embeds: [embed] }).then(msg => {
-                        setTimeout(() => msg.delete().catch(() => {}), 8000);                                           
-                    });                                           
-                }                                             
-            }
+    // 2 second safety window
+    if (Date.now() - data.setupAt > 2000) {
+        const duration = formatDuration(Date.now() - data.time);
+
+        afkData.delete(message.author.id);
+        await saveAFK();
+
+        const embed = new EmbedBuilder()
+            .setColor("#57F287")
+            .setAuthor({
+                name: message.author.username,
+                iconURL: message.author.displayAvatarURL({ dynamic: true })
+            })
+            .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
+            .setDescription(
+`<a:back:1532987608542744847> **Welcome Back!**
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+Your AFK status has been removed successfully.
+
+<a:Clock:1532990759371018372> **Time Away**
+> ${duration}
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+<a:success:1532986625343099050> Welcome back to **Pixel Villa Support**. Hope you had a great break!`
+            )
+            .setFooter({
+                text: "Pixel Villa Support • AFK Module"
+            })
+            .setTimestamp();
+
+       
         } catch (error) {                                     
             console.error("AFK System Error:", error);
         }                                             
