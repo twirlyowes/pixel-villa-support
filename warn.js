@@ -39,11 +39,19 @@ async function saveWarnings(warnings) {
 module.exports = (client) => {
   const PREFIX = ".";
 
-  function makeEmbed(color, text) {
-    return new EmbedBuilder()
-      .setColor(color)
-      .setDescription(text)
-      .setTimestamp();
+  function makeEmbed(color, title, text) {
+  return new EmbedBuilder()
+    .setColor(color)
+    .setAuthor({
+      name: "Pixel Villa Support • Warning System",
+      iconURL: client.user.displayAvatarURL()
+    })
+    .setTitle(title)
+    .setDescription(text)
+    .setFooter({
+      text: "Pixel Villa Support • Moderation"
+    })
+    .setTimestamp();
   }
 
   client.on("messageCreate", async (message) => {
@@ -71,7 +79,11 @@ module.exports = (client) => {
 
         if (!user) {
           return message.channel.send({
-            embeds: [makeEmbed("Red", `**Usage:** ${PREFIX}warn @user [reason]`)]
+            embeds: [makeEmbed(
+"Red",
+"<a:error:1532986765105696778> Invalid Usage",
+`**Usage:** \`${PREFIX}warn @user [reason]\``
+)]
           });
         }
 
@@ -155,21 +167,56 @@ module.exports = (client) => {
         const userWarns = warnings[user.id] || [];
 
         if (userWarns.length === 0) {
-          return message.channel.send({
-            embeds: [makeEmbed("Green", `**${user.user.tag}** has a clean record! (0 warnings)`)]
-          });
+  return message.channel.send({
+    embeds: [
+      makeEmbed(
+        "#57F287",
+        "<a:success:1532986625343099050> Clean Record",
+        `<:Shield_2:1532989398642327594> **User**
+> ${user}
+
+<a:Warning:1532986372716236932> **Warnings**
+> No warnings found.`
+      )
+    ]
+  });
+        }
         }
         const embed = new EmbedBuilder()
-          .setColor("Yellow")
-          .setTitle(`⚠️ Infraction History: ${user.user.tag}`)
-          .setDescription(`Total Warnings: **${userWarns.length}**`)
-          .setTimestamp();
+  .setColor("#F1C40F")
+  .setAuthor({
+    name: "Pixel Villa Support • Warning History",
+    iconURL: client.user.displayAvatarURL()
+  })
+  .setThumbnail(user.user.displayAvatarURL({ dynamic: true }))
+  .setTitle("<a:Warning:1532986372716236932> Infraction History")
+  .setDescription(
+`<:Shield_2:1532989398642327594> **User**
+> ${user}
+
+<:Stats:1532990723408793661> **Total Warnings**
+> ${userWarns.length}/5
+
+━━━━━━━━━━━━━━━━━━━━━━`
+  )
+  .setFooter({
+    text: "Pixel Villa Support • Moderation"
+  })
+  .setTimestamp();
 
         const recentWarns = userWarns.slice(-5).reverse();
         recentWarns.forEach((warn, index) => {
           embed.addFields({
-            name: `Warning #${userWarns.length - index} (ID: ${warn.id || "N/A"})`,
-            value: `**Mod:** ${warn.moderator}\n**Reason:** ${warn.reason}\n**Date:** <t:${Math.floor(new Date(warn.timestamp).getTime() / 1000)}:R>`
+            name: `<a:Warning:1532986372716236932> Warning #${userWarns.length - index} • ID: ${warn.id || "N/A"}`,
+            value:
+`<:Shield_2:1532989398642327594> **Moderator**
+> ${warn.moderator}
+
+<a:LP_Message:1532991009066324049> **Reason**
+> ${warn.reason}
+
+<a:Clock:1532990759371018372> **Date**
+> <t:${Math.floor(new Date(warn.timestamp).getTime() / 1000)}:R>`
           });
         });
 
@@ -218,13 +265,38 @@ if (command === "wremove") {
 
   await saveWarnings(warnings);
 
-  const embed = makeEmbed(
-    "Green",
-    `Successfully removed warning **${removed.id}** from **${user.user.tag}**.\n\n` +
-    `**Reason:** ${removed.reason}\n` +
-    `**Originally Warned By:** ${removed.moderator}\n` +
-    `**Removed By:** ${message.author.tag}`
-  );
+  const embed = new EmbedBuilder()
+  .setColor("#57F287")
+  .setAuthor({
+    name: "Pixel Villa Support • Warning System",
+    iconURL: client.user.displayAvatarURL()
+  })
+  .setThumbnail(user.user.displayAvatarURL({ dynamic: true }))
+  .setTitle("<a:success:1532986625343099050> Warning Removed")
+  .setDescription(
+`<:Shield_2:1532989398642327594> **User**
+> ${user}
+
+<:Stats:1532990723408793661> **Warning ID**
+> ${removed.id}
+
+<a:LP_Message:1532991009066324049> **Reason**
+> ${removed.reason}
+
+<a:Shield_2:1532989398642327594> **Originally Warned By**
+> ${removed.moderator}
+
+<a:settings:1532990547394957393> **Removed By**
+> ${message.author}
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+<a:sparkles:1532986077651140620> Warning has been removed successfully.`
+  )
+  .setFooter({
+    text: "Pixel Villa Support • Moderation"
+  })
+  .setTimestamp();
 
   await message.channel.send({ embeds: [embed] });
 
@@ -259,10 +331,32 @@ if (command === "wremove") {
         delete warnings[user.id];
         await saveWarnings(warnings);
 
-        const embed = makeEmbed(
-          "Green",
-          `Wiped all infraction history for **${user.user.tag}**.\n\n**Moderator:** ${message.author.tag}`
-        );
+        const embed = new EmbedBuilder()
+  .setColor("#57F287")
+  .setAuthor({
+    name: "Pixel Villa Support • Warning System",
+    iconURL: client.user.displayAvatarURL()
+  })
+  .setThumbnail(user.user.displayAvatarURL({ dynamic: true }))
+  .setTitle("<a:success:1532986625343099050> Warning History Reset")
+  .setDescription(
+`<:Shield_2:1532989398642327594> **User**
+> ${user}
+
+<a:Warning:1532986372716236932> **Action**
+> All warnings have been removed
+
+<a:settings:1532990547394957393> **Reset By**
+> ${message.author}
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+<a:sparkles:1532986077651140620> Infraction history has been cleared successfully.`
+  )
+  .setFooter({
+    text: "Pixel Villa Support • Moderation"
+  })
+  .setTimestamp();
         await message.channel.send({ embeds: [embed] });
 
         // FIX: Fetch the channel asynchronously instead of relying purely on memory cache
