@@ -85,48 +85,153 @@ module.exports = (client) => {
       // 3. USER INFO COMMAND ("ui" or "userinfo")
       // ==========================
       if (command === "ui" || command === "userinfo") {
-        let targetUser = message.author;
-        let targetMember = message.member;
+      let targetUser = message.author;
+let targetMember = message.member;
 
-        const arg = words[0];
-        if (arg) {
-          const cleanedId = arg.replace(/<@!?(\d+)>/, "$1");
-          try {
-            targetUser = await client.users.fetch(cleanedId);
-            targetMember = await message.guild.members.fetch(targetUser.id).catch(() => null);
-          } catch (err) {
-            return message.reply({ embeds: [makeEmbed("Red", "Could not find a user with that ID or mention.")] });
-          }
-        }
+const arg = words[0];
+if (arg) {
+  const cleanedId = arg.replace(/<@!?(\d+)>/, "$1");
 
-        let acknowledgment = "Member";
-        if (message.guild.ownerId === targetUser.id) {
-          acknowledgment = "Server Owner";
-        } else if (targetMember) {
-          if (targetMember.permissions.has("Administrator")) {
-            acknowledgment = "Administrator";
-          } else if (targetMember.permissions.has("ManageMessages") || targetMember.permissions.has("KickMembers") || targetMember.permissions.has("BanMembers")) {
-            acknowledgment = "Moderator";
-          } else if (targetUser.bot) {
-            acknowledgment = "Bot Account";
-          }
-        }
+  try {
+    targetUser = await client.users.fetch(cleanedId, { force: true });
+    targetMember = await message.guild.members.fetch(targetUser.id).catch(() => null);
+  } catch {
+    return message.reply({
+      embeds: [
+        makeEmbed(
+          "Red",
+          "<a:error:1532986765105696778> Could not find a user with that ID or mention."
+        ),
+      ],
+    });
+  }
+}
 
-        const uiEmbed = new EmbedBuilder()
-          .setColor("Blue")
-          .setAuthor({ name: targetUser.tag, iconURL: targetUser.displayAvatarURL({ dynamic: true }) })
-          .setThumbnail(targetUser.displayAvatarURL({ dynamic: true, size: 256 }))
-          .setTitle("User Information Profile")
-          .addFields(
-            { name: "User ID", value: `\`${targetUser.id}\``, inline: true },
-            { name: "Acknowledgment", value: acknowledgment, inline: true },
-            { name: "Highest Role", value: targetMember ? `${targetMember.roles.highest}` : "None", inline: true },
-            { name: "Joined Discord", value: `<t:${Math.floor(targetUser.createdTimestamp / 1000)}:R>`, inline: true },
-            { name: "Joined Server", value: targetMember && targetMember.joinedTimestamp ? `<t:${Math.floor(targetMember.joinedTimestamp / 1000)}:R>` : "Unknown", inline: true }
-          )
-          .setTimestamp();
+// Fetch full user (needed for banner & badges)
+await targetUser.fetch(true);
 
-        return message.reply({ embeds: [uiEmbed] });
+// Acknowledgement
+let acknowledgment = "Member";
+
+if (message.guild.ownerId === targetUser.id) {
+  acknowledgment = "Server Owner";
+} else if (targetUser.bot) {
+  acknowledgment = "Bot Account";
+} else if (targetMember) {
+  if (targetMember.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    acknowledgment = "Server Administrator";
+  } else if (
+    targetMember.permissions.has(PermissionsBitField.Flags.ManageMessages) ||
+    targetMember.permissions.has(PermissionsBitField.Flags.KickMembers) ||
+    targetMember.permissions.has(PermissionsBitField.Flags.BanMembers)
+  ) {
+    acknowledgment = "Server Moderator";
+  }
+}
+
+const nickname = targetMember?.nickname || "None";
+const highestRole = targetMember?.roles.highest || "None";
+const color =
+  targetMember?.displayHexColor && targetMember.displayHexColor !== "#000000"
+    ? targetMember.displayHexColor
+    : "#000000";
+
+const roleList = targetMember
+  ? targetMember.roles.cache
+      .filter((r) => r.id !== message.guild.id)
+      .sort((a, b) => b.position - a.position)
+      .map((r) => `${r}`)
+      .join(", ")
+  : "None";
+
+const roleCount = targetMember
+  ? targetMember.roles.cache.filter((r) => r.id !== message.guild.id).size
+  : 0;
+
+// Key Permissions
+const keyPermissions = targetMember
+  ? targetMember.permissions
+      .toArray()
+      .map((p) =>
+        p
+          .replace(/([A-Z])/g, " $1")
+          .replace(/^./, (c) => c.toUpperCase())
+      )
+      .join(", ")
+  : "None";
+
+// Badges
+const flags = await targetUser.fetchFlags();
+
+const badgeMap = {
+  ActiveDeveloper: "🧑‍💻 Active Developer",
+  BugHunterLevel1: "🐛 Bug Hunter",
+  BugHunterLevel2: "🐞 Bug Hunter Level 2",
+  CertifiedModerator: "🛡️ Moderator Programs",
+  HypeSquadOnlineHouse1: "🏠 HypeSquad Bravery",
+  HypeSquadOnlineHouse2: "🏡 HypeSquad Brilliance",
+  HypeSquadOnlineHouse3: "🏘️ HypeSquad Balance",
+  Hypesquad: "🎉 HypeSquad Events",
+  Partner: "🤝 Discord Partner",
+  PremiumEarlySupporter: "🌟 Early Supporter",
+  Staff: "👑 Discord Staff",
+  VerifiedBot: "🤖 Verified Bot",
+  VerifiedDeveloper: "💻 Early Verified Bot Developer"
+};
+
+const badges = flags.toArray().length
+  ? flags.toArray().map((f) => badgeMap[f] || f).join(", ")
+  : "<a:error:1532986765105696778> No User Badges";
+
+const botStatus = targetUser.bot
+  ? "<a:success:1532986625343099050> Yes"
+  : "<a:error:1532986765105696778> No";
+
+const uiEmbed = new EmbedBuilder()
+  .setColor(color)
+  .setAuthor({
+    name: `${targetUser.tag}`,
+    iconURL: targetUser.displayAvatarURL({ dynamic: true }),
+  })
+  .setThumbnail(targetUser.displayAvatarURL({ dynamic: true, size: 4096 }))
+  .setImage(targetUser.bannerURL({ size: 4096, dynamic: true }))
+  .setDescription(
+`<:Stats:1532990723408793661> **User Information**
+
+**Username:** ${targetUser.username}
+**User ID:** ${targetUser.id}
+**Nickname:** ${nickname}
+**Bot:** ${botStatus}
+**Discord Badges:** ${badges}
+**Account Created:** <t:${Math.floor(targetUser.createdTimestamp / 1000)}:R>
+**Server Joined:** ${
+      targetMember?.joinedTimestamp
+        ? `<t:${Math.floor(targetMember.joinedTimestamp / 1000)}:R>`
+        : "Unknown"
+    }
+**Highest Role:** ${highestRole}
+**Color:** ${color}
+**Roles [${roleCount}]:** ${
+      roleList.length > 900 ? roleList.substring(0, 900) + "..." : roleList
+    }
+
+**Key Permissions**
+${
+      keyPermissions.length > 900
+        ? keyPermissions.substring(0, 900) + "..."
+        : keyPermissions
+    }
+
+**Acknowledgement**
+${acknowledgment}`
+  )
+  .setFooter({
+    text: `Requested by ${message.author.tag}`,
+    iconURL: message.author.displayAvatarURL({ dynamic: true }),
+  })
+  .setTimestamp();
+
+return message.reply({ embeds: [uiEmbed] });
       }
 
       // ==========================
