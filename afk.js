@@ -201,6 +201,13 @@ Your AFK status has been removed successfully.
                 text: "Pixel Villa Support • AFK Module"
             })
             .setTimestamp();
+        return message.channel.send({
+    embeds: [embed]
+}).then(msg => {
+    setTimeout(() => msg.delete().catch(() => {}), 8000);
+});
+    }
+            }
 
        
         } catch (error) {                                     
