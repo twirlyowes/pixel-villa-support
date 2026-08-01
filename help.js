@@ -16,79 +16,72 @@ module.exports = (client) => {
             if (command !== "help") return;
 
             const helpEmbed = new EmbedBuilder()
-                .setColor("#5865F2")
-                .setTitle("Pixel Villa Support")
-                .setDescription(
-                    "Welcome to Pixel Villa Support!\n\n" +
-                    "Note: Moderation and warning actions require the . prefix. Management and utility commands use no prefix."
-                )
-                .addFields(
-                    {
-                        name: "Moderation",
-                        value:
-                        "`.warn @user reason`\n" +
-                        "`.mute @user time reason`\n" +
-                        "`.unmute @user`\n" +
-                        "`.kick @user reason`\n" +
-                        "`.ban @user reason`\n" +
-                        "`.unban user ID`\n" +
-                        "`.nick @user [name]`\n" + 
-                        "`.lock`\n" +               
-                        "`.unlock`\n" +             
-                        "`.wlist`\n" +
-                        "`.wremove <id>`\n" +
-                        "`.wreset @user`\n" +
-                        "`.sticky [message]`\n" +
-                        "`.sticky off`\n" +
-                        "`.dm @user [message]`\n" +
-                        "`.hide`\n" +
-                        "`.unhide`\n" +
-                        "`.say [message]`\n" +
-                        "`.botinfo`",
-                        inline: false
-                    },
-                    {
-                        name: "Server Management",
-                        value:
-                        "`role @user [role name]`\n" +
-                        "`addbadword [word]`\n" +
-                        "`removebadword [word]`\n" +
-                        "`badwordslist`",
-                        inline: false
-                    },
-                    {
-                        name: "Utility",
-                        value:
-                        "`purge amount`\n" +
-                        "`afk [reason]`\n" +
-                        "`ping`\n" +                 
-                        "`uptime`\n" +               
-                        "`help`\n" +
-                        "`ui [@user]`\n" +
-                        "`si`\n" +
-                        "`wiki [query]`\n" +
-                        "`calculate [expression]`",
-                        inline: false
-                    },
-                    {
-                        name: "Voice Master",
-                        value:
-                        "`vcp`\n" +
-                        "`vclock`\n" +
-                        "`vcunlock`\n" +
-                        "`vchide`\n" +
-                        "`vcunhide`\n" +
-                        "`vcname [room name]`\n" +
-                        "`vclimit [limit]`\n" +
-                        "`vckick @user`",
-                        inline: false
-                    }
-                )
-                .setFooter({
-                    text: "Pixel Villa Support"
-                })
-                .setTimestamp();
+    .setColor("#5865F2")
+    .setAuthor({
+        name: "Pixel Villa Support • Help Center",
+        iconURL: client.user.displayAvatarURL()
+    })
+    .setThumbnail(client.user.displayAvatarURL())
+    .setDescription(
+`<a:sparkles:1532986077651140620> **Welcome to Pixel Villa Support!**
 
+Use the categories below to explore all available commands.
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+<:Shield_2:1532989398642327594> **Prefixes**
+> **Moderation:** \`.command\`
+> **Utilities & Management:** \`command\``
+    )
+    .addFields(
+        {
+            name: "<a:ban:1532989769766801511> Moderation",
+            value:
+            "```" +
+            ".warn\n" +
+            ".mute\n" +
+            ".unmute\n" +
+            ".kick\n" +
+            ".ban\n" +
+            ".unban\n" +
+            ".nick\n" +
+            ".lock\n" +
+            ".unlock\n" +
+            ".hide\n" +
+            ".unhide\n" +
+            ".wlist\n" +
+            ".wremove\n" +
+            ".wreset" +
+            "```",
+            inline: true
+        },
+        {
+            name: "<a:settings:1532990547394957393> Management",
+            value:
+            "```" +
+            "role" +
+            "```",
+            inline: true
+        },
+        {
+            name: "<:terminal:1532991459005829264> Utility",
+            value:
+            "```" +
+            "purge\n" +
+            "afk\n" +
+            "help\n" +
+            "ui\n" +
+            "si\n" +
+            "wiki\n" +
+            "calculate" +
+            "```",
+            inline: false
+        }
+    )
+    .setFooter({
+        text: "Pixel Villa Support • Developed with ❤️"
+    })
+    .setTimestamp();
             return message.reply({ embeds: [helpEmbed] });
 
         } catch (error) {
