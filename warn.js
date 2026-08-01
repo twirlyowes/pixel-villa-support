@@ -67,7 +67,15 @@ module.exports = (client) => {
 
     // Check if the executor has the required Staff Role
     if (!config.STAFF_ROLE_ID || !message.member.roles.cache.has(config.STAFF_ROLE_ID)) {
-      return message.channel.send("u cannot use this command");
+      return message.channel.send({
+  embeds: [
+    makeEmbed(
+      "#E74C3C",
+      "<a:error:1532986765105696778> Permission Denied",
+      "You do not have permission to use this command."
+    )
+  ]
+});
     }
 
     try {
@@ -111,7 +119,7 @@ module.exports = (client) => {
         try {
           const dmEmbed = new EmbedBuilder()
             .setColor("Yellow")
-            .setTitle(`⚠️ Warning Received | ${message.guild.name}`)
+            .setTitle(`<a:Warning:1532986372716236932> Warning Received | ${message.guild.name}`)
             .setDescription(`You have received a warning in **${message.guild.name}**.\n\n**Reason:** ${reason}`)
             .setTimestamp();
 
@@ -283,7 +291,7 @@ if (command === "wremove") {
 <a:LP_Message:1532991009066324049> **Reason**
 > ${removed.reason}
 
-<a:Shield_2:1532989398642327594> **Originally Warned By**
+<:Shield_2:1532989398642327594> **Originally Warned By**
 > ${removed.moderator}
 
 <a:settings:1532990547394957393> **Removed By**
