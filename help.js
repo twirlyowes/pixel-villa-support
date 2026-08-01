@@ -31,7 +31,7 @@ Use the categories below to explore all available commands.
 
 <:Shield_2:1532989398642327594> **Prefixes**
 > **Moderation:** \`.command\`
-> **Utilities & Management:** \`command\``
+> **Utilities & Management:** \`command\`
     )
     .addFields(
         {
