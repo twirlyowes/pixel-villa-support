@@ -1,242 +1,195 @@
-const { EmbedBuilder } = require('discord.js');
-
-// Configuration
-const LOG_CHANNEL_ID = "1533360058883244153";
-const BLURPLE = 0x5865F2;
-
-// Collection to track users currently undergoing the registration process
-const activeRegistrations = new Set();
-
-/**
- * Generates a unique registration ID in the format PV-XXXXXX.
- * @returns {string}
- */
-function generateRegistrationId() {
-    const randomNum = Math.floor(100000 + Math.random() * 900000);
-    return `PV-${randomNum}`;
-}
-
-/**
- * Validates an email address using a standard regex.
- * @param {string} email 
- * @returns {boolean}
- */
-function isValidEmail(email) {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email);
-}
+const {
+    EmbedBuilder,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+    ModalBuilder,
+    TextInputBuilder,
+    TextInputStyle,
+    ChannelType
+} = require("discord.js");
 
 module.exports = (client) => {
+    const LOG_CHANNEL_ID = "1533360058883244153";
+    const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
     client.on("messageCreate", async (message) => {
-        // Ignore bot messages
-        if (message.author.bot) return;
-
-        // Ensure command is run inside a guild/server
-        if (!message.guild) return;
-
-        const PREFIX = ".";
-
-        if (!message.content.startsWith(PREFIX)) return;
-
-        const args = message.content.slice(PREFIX.length).trim().split(/ +/);
-        const command = args.shift().toLowerCase();
-
-        if (command !== "register") return;
-
-    
-        // Ignore bot messages
-        if (message.author.bot) return;
-
-        // Ensure command is run inside a guild/server
-        if (!message.guild) {
-            const errorEmbed = new EmbedBuilder()
-                .setTitle("❌ Error")
-                .setDescription("This command can only be used inside a server.")
-                .setColor(BLURPLE)
-                .setTimestamp();
-            return message.reply({ embeds: [errorEmbed] });
-        }
-
-        const userId = message.author.id;
-
-        // Prevent duplicate registrations
-        if (activeRegistrations.has(userId)) {
-            const activeEmbed = new EmbedBuilder()
-                .setTitle("⚠️ Registration in Progress")
-                .setDescription("You already have an active registration process in progress. Please check your DMs.")
-                .setColor(BLURPLE)
-                .setTimestamp();
-            return message.reply({ embeds: [activeEmbed] });
-        }
-
         try {
-            // Check if DMs are open by attempting to create DM channel
-            const dmChannel = await message.author.createDM();
-            
-            // Mark user as actively registering
-            activeRegistrations.add(userId);
+            if (message.author.bot || !message.guild) return;
+            if (message.content.trim() === ".register") {
+                const buttonId = `pv_register_button_${message.author.id}`;
 
-            // Acknowledge in the server channel with a professional embed
-            const serverReplyEmbed = new EmbedBuilder()
-                .setTitle("✅ Registration Started")
-                .setDescription("Check your DMs to continue your registration.")
-                .setColor(BLURPLE)
-                .setTimestamp();
-            await message.reply({ embeds: [serverReplyEmbed] });
-
-            // Define questions array to loop through and reduce repetition
-            const questions = [
-                { id: 1, text: "What is your Team Name?", validate: (ans) => ans.length > 0, errorMsg: "Team name cannot be empty. Please enter your Team Name:" },
-                { id: 2, text: "Provide the Team Leader's In-Game Name (IGN) and Discord ID.", validate: (ans) => ans.length > 0, errorMsg: "This field cannot be empty. Please provide the Team Leader's IGN and Discord ID:" },
-                { id: 3, text: "Provide the Second Player's In-Game Name (IGN) and Discord ID.", validate: (ans) => ans.length > 0, errorMsg: "This field cannot be empty. Please provide the Second Player's IGN and Discord ID:" },
-                { id: 4, text: "What is the Team Leader's Email Address?", validate: (ans) => isValidEmail(ans), errorMsg: "Invalid email address format. Please enter a valid Team Leader Email Address:" }
-            ];
-
-            const answers = [];
-            const filter = (response) => response.author.id === userId && !response.author.bot;
-            const timeoutDuration = 600000; // 10 minutes in milliseconds
-
-            // Loop through questions dynamically
-            for (let i = 0; i < questions.length; i++) {
-                const q = questions[i];
-                const progressPercentage = Math.round((i / questions.length) * 100);
-
-                let currentPrompt = `**Question ${q.id}/4**\nProgress: ${progressPercentage}% Complete\n\n${q.text}`;
-                
-                let promptEmbed = new EmbedBuilder()
+                const embed = new EmbedBuilder()
                     .setTitle("📋 Tournament Registration")
-                    .setDescription(currentPrompt)
-                    .setColor(BLURPLE)
-                    .setFooter({ text: "Pixel Villa • Tournament Registration" })
-                    .setTimestamp();
+                    .setDescription("Click the button below to begin your tournament registration.")
+                    .setColor(0x5865F2)
+                    .setFooter({ text: "Pixel Villa • Tournament Registration" });
 
-                await dmChannel.send({ embeds: [promptEmbed] });
+                const row = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(buttonId)
+                        .setLabel("Register")
+                        .setStyle(ButtonStyle.Primary)
+                        .setEmoji("📝")
+                );
 
-                let validAnswerReceived = false;
-                let finalAnswer = "";
-
-                while (!validAnswerReceived) {
-                    try {
-                        const collected = await dmChannel.awaitMessages({
-    filter,
-    max: 1,
-    time: timeoutDuration,
-    errors: ['time']
-});
-
-const responseMessage = collected.first();
-
-console.log("User replied:", responseMessage.content);
-
-finalAnswer = responseMessage.content.trim();
-
-                        if (q.validate(finalAnswer)) {
-                            validAnswerReceived = true;
-                        } else {
-                            // If invalid or empty, prompt again without cancelling
-                            let retryEmbed = new EmbedBuilder()
-                                .setTitle("⚠️ Invalid Input")
-                                .setDescription(`❌ ${q.errorMsg}`)
-                                .setColor(BLURPLE)
-                                .setFooter({ text: "Pixel Villa • Tournament Registration" })
-                                .setTimestamp();
-                            await dmChannel.send({ embeds: [retryEmbed] });
-                        }
-                    } catch (error) {
-                        // Handle timeout per question
-                        activeRegistrations.delete(userId);
-                        let timeoutEmbed = new EmbedBuilder()
-                            .setTitle("❌ Registration Expired")
-                            .setDescription("Your registration has expired due to inactivity. Please run `.register` again.")
-                            .setColor(BLURPLE)
-                            .setFooter({ text: "Pixel Villa • Tournament Registration" })
-                            .setTimestamp();
-                        await dmChannel.send({ embeds: [timeoutEmbed] });
-                        return;
-                    }
-                }
-
-                answers.push(finalAnswer);
+                await message.channel.send({
+                    embeds: [embed],
+                    components: [row]
+                });
             }
-
-            // Remove user from active registrations map once successfully collected
-            activeRegistrations.delete(userId);
-
-            // Generate unique Registration ID
-            const registrationId = generateRegistrationId();
-
-            // Fetch the log channel
-            const logChannel = message.client.channels.cache.get(LOG_CHANNEL_ID);
-            if (!logChannel || !logChannel.isTextBased()) {
-                const internalErrorEmbed = new EmbedBuilder()
-                    .setTitle("❌ Internal Error")
-                    .setDescription("An internal error occurred while submitting your registration. Please contact a staff member.")
-                    .setColor(BLURPLE)
-                    .setFooter({ text: "Pixel Villa • Tournament Registration" })
-                    .setTimestamp();
-                await dmChannel.send({ embeds: [internalErrorEmbed] });
-                return;
-            }
-
-            const currentTimestamp = Math.floor(Date.now() / 1000);
-
-            // Build professional log embed with fields in exact specified order
-            const logEmbed = new EmbedBuilder()
-                .setTitle("📋 New Tournament Registration")
-                .setDescription("A new tournament registration has been submitted.")
-                .setColor(BLURPLE)
-                .setThumbnail(message.author.displayAvatarURL({ dynamic: true, size: 256 }))
-                .addFields(
-                    { name: "• Registration ID", value: registrationId, inline: false },
-                    { name: "• Applicant", value: `${message.author.tag}`, inline: false },
-                    { name: "• User ID", value: `${message.author.id}`, inline: false },
-                    { name: "• Team Name", value: answers[0], inline: false },
-                    { name: "• Team Leader (IGN + Discord ID)", value: answers[1], inline: false },
-                    { name: "• Second Player (IGN + Discord ID)", value: answers[2], inline: false },
-                    { name: "• Team Leader Email", value: answers[3], inline: false },
-                    { name: "• Submitted", value: `<t:${currentTimestamp}:F> (<t:${currentTimestamp}:R>)`, inline: false }
-                )
-                .setFooter({ text: "Pixel Villa • Tournament Registration" })
-                .setTimestamp();
-
-            // Send mention and embed to the log channel
-            await logChannel.send({
-                content: `<@${message.author.id}>`,
-                embeds: [logEmbed]
-            });
-
-            // Send success embed to the user's DMs
-            const userSuccessEmbed = new EmbedBuilder()
-                .setTitle("✅ Registration Successful")
-                .setDescription(`Your registration has been submitted successfully! Thank you for registering.\n\n**Registration ID:** ${registrationId}`)
-                .setColor(BLURPLE)
-                .setFooter({ text: "Pixel Villa • Tournament Registration" })
-                .setTimestamp();
-            await dmChannel.send({ embeds: [userSuccessEmbed] });
-
-            // Confirm in the server that the registration was submitted
-            const serverSuccessEmbed = new EmbedBuilder()
-                .setTitle("✅ Registration Submitted")
-                .setDescription(`<@${message.author.id}>, your registration has been successfully submitted! Check your DMs for details.`)
-                .setColor(BLURPLE)
-                .setTimestamp();
-            await message.channel.send({ embeds: [serverSuccessEmbed] });
-
         } catch (error) {
-            // Handle closed DMs or unexpected execution errors
-            activeRegistrations.delete(userId);
-            try {
-                const dmErrorEmbed = new EmbedBuilder()
-                    .setTitle("❌ Error")
-                    .setDescription("I couldn't DM you. Please enable Direct Messages and try again.")
-                    .setColor(BLURPLE)
-                    .setTimestamp();
-                await message.reply({ embeds: [dmErrorEmbed] });
-            } catch {
-                // Fail silently if unable to reply to message
-            }
+            console.error("Error in messageCreate handler for .register:", error);
+        }
+    });
+
+    client.on("interactionCreate", async (interaction) => {
+        try {
+            if (interaction.isButton()) {
+                if (!interaction.customId.startsWith("pv_register_button_")) return;
+
+                const targetUserId = interaction.customId.split("_")[3];
+
+                if (interaction.user.id !== targetUserId) {
+                    return interaction.reply({
+                        content: "❌ This registration button belongs to another user.",
+                        ephemeral: true
+                    });
                 }
+
+                const modal = new ModalBuilder()
+                    .setCustomId(`pv_register_modal_${interaction.user.id}`)
+                    .setTitle("Tournament Registration");
+
+                const teamNameInput = new TextInputBuilder()
+                    .setCustomId("team_name")
+                    .setLabel("Team Name")
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(true);
+
+                const leaderInput = new TextInputBuilder()
+                    .setCustomId("team_leader")
+                    .setLabel("Team Leader IGN + Discord ID")
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(true);
+
+                const secondPlayerInput = new TextInputBuilder()
+                    .setCustomId("second_player")
+                    .setLabel("Second Player IGN + Discord ID")
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(true);
+
+                const emailInput = new TextInputBuilder()
+                    .setCustomId("team_email")
+                    .setLabel("Team Leader Email")
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(true);
+
+                modal.addComponents(
+                    new ActionRowBuilder().addComponents(teamNameInput),
+                    new ActionRowBuilder().addComponents(leaderInput),
+                    new ActionRowBuilder().addComponents(secondPlayerInput),
+                    new ActionRowBuilder().addComponents(emailInput)
+                );
+
+                await interaction.showModal(modal);
+
+                try {
+                    const disabledButton = new ButtonBuilder()
+                        .setCustomId(interaction.customId)
+                        .setLabel("Register")
+                        .setStyle(ButtonStyle.Primary)
+                        .setEmoji("📝")
+                        .setDisabled(true);
+
+                    const disabledRow = new ActionRowBuilder().addComponents(disabledButton);
+                    await interaction.message.edit({ components: [disabledRow] });
+                } catch (editError) {
+                    console.error("Failed to disable registration button:", editError);
+                }
+            } else if (interaction.isModalSubmit()) {
+                if (!interaction.customId.startsWith("pv_register_modal_")) return;
+
+                const teamName = interaction.fields.getTextInputValue("team_name");
+                const teamLeader = interaction.fields.getTextInputValue("team_leader");
+                const secondPlayer = interaction.fields.getTextInputValue("second_player");
+                const teamEmail = interaction.fields.getTextInputValue("team_email");
+
+                if (!EMAIL_REGEX.test(teamEmail)) {
+                    return interaction.reply({
+                        content: "❌ Invalid email format. Please submit again with a valid email.",
+                        ephemeral: true
+                    });
+                }
+
+                const registrationId = `PV-${Math.floor(100000 + Math.random() * 900000)}`;
+                const timestamp = Math.floor(Date.now() / 1000);
+
+                const logChannel = interaction.guild.channels.cache.get(LOG_CHANNEL_ID) || await interaction.guild.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
+
+                if (!logChannel || logChannel.type !== ChannelType.GuildText) {
+                    console.error("Log channel not found or is not a text channel.");
+                    return interaction.reply({
+                        content: "❌ An internal error occurred while processing your registration. Please contact an administrator.",
+                        ephemeral: true
+                    });
+                }
+
+                const logEmbed = new EmbedBuilder()
+                    .setTitle("📋 New Tournament Registration")
+                    .setColor(0x5865F2)
+                    .setThumbnail(interaction.user.displayAvatarURL({ dynamic: true }))
+                    .addFields(
+                        { name: "Registration ID", value: registrationId, inline: false },
+                        { name: "Applicant", value: `${interaction.user}`, inline: true },
+                        { name: "User ID", value: interaction.user.id, inline: true },
+                        { name: "Team Name", value: teamName, inline: false },
+                        { name: "Team Leader (IGN + Discord ID)", value: teamLeader, inline: false },
+                        { name: "Second Player (IGN + Discord ID)", value: secondPlayer, inline: false },
+                        { name: "Team Leader Email", value: teamEmail, inline: false },
+                        { name: "Submitted", value: `<t:${timestamp}:F> (<t:${timestamp}:R>)`, inline: false }
+                    )
+                    .setFooter({ text: "Pixel Villa • Tournament Registration" })
+                    .setTimestamp();
+
+                try {
+                    await logChannel.send({
+                        content: `${interaction.user}`,
+                        embeds: [logEmbed]
+                    });
+                } catch (sendError) {
+                    console.error("Failed to send message to log channel (check bot permissions):", sendError);
+                    return interaction.reply({
+                        content: "❌ Failed to send registration logs due to missing permissions. Please contact an administrator.",
+                        ephemeral: true
+                    });
+                }
+
+                const userEmbed = new EmbedBuilder()
+                    .setTitle("✅ Registration Submitted")
+                    .setDescription("Your registration has been submitted successfully.")
+                    .setColor(0x5865F2)
+                    .addFields(
+                        { name: "Registration ID", value: registrationId, inline: false }
+                    );
+
+                await interaction.reply({
+                    embeds: [userEmbed],
+                    ephemeral: true
+                });
+            }
+        } catch (error) {
+            console.error("Error in interactionCreate handler:", error);
+            if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
+                try {
+                    await interaction.reply({
+                        content: "❌ An unexpected error occurred while processing your request.",
+                        ephemeral: true
+                    });
+                } catch (replyError) {
+                    console.error("Failed to send error reply:", replyError);
+                }
+            }
+        }
     });
 };
-    
-
