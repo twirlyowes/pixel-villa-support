@@ -26,16 +26,24 @@ function isValidEmail(email) {
     return emailRegex.test(email);
 }
 
-module.exports = {
-    name: "register",
-    description: "Starts the tournament registration process via DMs.",
+module.exports = (client) => {
+    client.on("messageCreate", async (message) => {
+        // Ignore bot messages
+        if (message.author.bot) return;
+
+        // Ensure command is run inside a guild/server
+        if (!message.guild) return;
+
+        const PREFIX = ".";
+
+        if (!message.content.startsWith(PREFIX)) return;
+
+        const args = message.content.slice(PREFIX.length).trim().split(/ +/);
+        const command = args.shift().toLowerCase();
+
+        if (command !== "register") return;
+
     
-    /**
-     * Executes the register command.
-     * @param {import('discord.js').Message} message - The Discord message object.
-     * @param {string[]} args - Command arguments.
-     */
-    async execute(message, args) {
         // Ignore bot messages
         if (message.author.bot) return;
 
