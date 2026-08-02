@@ -19,41 +19,49 @@ module.exports = (client) => {
     const rawContent = message.content.trim();
 
     // ==========================
-    // 1. IP COMMAND (Exact match "ip")
-    // ==========================
-    if (rawContent.toLowerCase() === "ip") {
-  const embed = new EmbedBuilder()
-    .setColor("#5865F2")
-    .setAuthor({
-      name: "Pixel Villa Support • Server Information",
-      iconURL: client.user.displayAvatarURL()
-    })
-    .setTitle("<:HOME:1532991400503673055> Pixel Villa Server IP")
-    .setDescription(
+// 1. IP COMMAND (Exact match "ip")
+// ==========================
+if (rawContent.toLowerCase() === "ip") {
+    const embed = new EmbedBuilder()
+        .setColor("#5865F2")
+        .setAuthor({
+            name: "Pixel Villa Support • Server Information",
+            iconURL: client.user.displayAvatarURL()
+        })
+        .setTitle("<:HOME:1532991400503673055> Pixel Villa Server IP")
+        .setDescription(
 `<a:sparkles:1532986077651140620> **Java Edition**
-<:Link:1532991169984991302> **Address:** \`mc.pixelvilla.fun\`
-<:terminal:1532991459005829264> **Port:** \`25575\`
+<:Link:1532991169984991302> **IP:** \`mc.pixelvilla.fun:25575\`
 
 <a:sparkles:1532986077651140620> **Bedrock Edition**
 <:Link:1532991169984991302> **IP:** \`mc.pixelvilla.fun\`
 <:terminal:1532991459005829264> **Port:** \`25575\``
-    )
-    .setFooter({
-      text: `Requested by ${message.author.tag}`,
-      iconURL: message.author.displayAvatarURL({ dynamic: true })
-    })
-    .setTimestamp();
+        )
+        .setFooter({
+            text: `Requested by ${message.author.tag}`,
+            iconURL: message.author.displayAvatarURL({ dynamic: true })
+        })
+        .setTimestamp();
 
-  return message.reply({ embeds: [embed] });
+    try {
+        await message.channel.send({
+            embeds: [embed]
+        });
+    } catch (err) {
+        console.error("[IP Command] Failed to send embed:", err);
     }
 
-    const tokens = rawContent.split(/ +/);
-    const firstWord = tokens[0].toLowerCase();
+    return;
+}
 
-    // Support both dot-prefixed and non-prefixed commands cleanly
-    const command = firstWord.startsWith(PREFIX) ? firstWord.slice(PREFIX.length) : firstWord;
-    const words = [...tokens];
-    words.shift(); // words array without the primary command word
+const tokens = rawContent.split(/ +/);
+const firstWord = tokens[0].toLowerCase();
+
+// Support both dot-prefixed and non-prefixed commands cleanly
+const command = firstWord.startsWith(PREFIX) ? firstWord.slice(PREFIX.length) : firstWord;
+const words = [...tokens];
+words.shift(); // words array without the primary command word
+    
 
     try {
       // ==========================
