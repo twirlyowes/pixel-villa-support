@@ -117,9 +117,18 @@ module.exports = (client) => {
 
                 while (!validAnswerReceived) {
                     try {
-                        const collected = await dmChannel.awaitMessages({ filter, max: 1, time: timeoutDuration, errors: ['time'] });
-                        const responseMessage = collected.first();
-                        finalAnswer = responseMessage.content.trim();
+                        const collected = await dmChannel.awaitMessages({
+    filter,
+    max: 1,
+    time: timeoutDuration,
+    errors: ['time']
+});
+
+const responseMessage = collected.first();
+
+console.log("User replied:", responseMessage.content);
+
+finalAnswer = responseMessage.content.trim();
 
                         if (q.validate(finalAnswer)) {
                             validAnswerReceived = true;
