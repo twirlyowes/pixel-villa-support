@@ -226,6 +226,8 @@ module.exports = (client) => {
             } catch {
                 // Fail silently if unable to reply to message
             }
-        }
-    }
+                }
+    });
 };
+    
+
