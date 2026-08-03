@@ -38,7 +38,8 @@ async function saveWarnings(warnings) {
   } catch (error) {
     console.error("❌ Firebase warning save error:", error);
   }
-        }
+}
+
 
 module.exports = (client) => {
   const PREFIX = ".";
