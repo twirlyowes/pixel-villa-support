@@ -17,11 +17,13 @@ async function migrateWarnings() {
     );
 
     const data = await response.json();
-    const oldWarnings = data.record;
+
+    const oldWarnings = data.record || data;
 
     console.log(`Found ${Object.keys(oldWarnings).length} users`);
 
     for (const [userId, warnings] of Object.entries(oldWarnings)) {
+
       await db.collection("warnings").doc(userId).set({
         warnings: warnings
       });
@@ -30,11 +32,9 @@ async function migrateWarnings() {
     }
 
     console.log("🎉 Migration complete!");
-    process.exit();
 
   } catch (error) {
     console.error("❌ Migration failed:", error);
-    process.exit(1);
   }
 }
 
