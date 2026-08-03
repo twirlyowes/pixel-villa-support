@@ -292,12 +292,7 @@ if (oldState.channelId && oldState.channelId !== newState.channelId) {
 
         activeTempChannels.delete(channelId);
 
-        const binData = await fetchJSONBin();
-
-        if (binData.channels?.[channelId]) {
-          delete binData.channels[channelId];
-          await updateJSONBin(binData);
-        }
+        await deleteVoiceChannel(channelId);
 
         console.log(`[VoiceSystem] Deleted empty temporary channel: ${channelId}`);
 
@@ -464,11 +459,10 @@ if (oldState.channelId && oldState.channelId !== newState.channelId) {
         activeTempChannels.set(memberChannel.id, targetMember.id);  
         console.log(`[VoiceSystem Ownership] Transferred ownership of channel ${memberChannel.id} to new owner ID: ${targetMember.id}`);
 
-        const binData = await fetchJSONBin();  
-        if (binData.channels && binData.channels[memberChannel.id]) {  
-          binData.channels[memberChannel.id].owner = targetMember.id;  
-          await updateJSONBin(binData);  
-        }  
+        await saveVoiceChannel(memberChannel.id, {
+  owner: targetMember.id,
+  updatedAt: Date.now()
+});
 
         const successEmbed = new EmbedBuilder()  
           .setColor("Green")  
