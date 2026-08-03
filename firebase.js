@@ -23,4 +23,4 @@ const db = admin.firestore();
 
 console.log("✅ Firebase connected");
 
-module.exports = db;
+module.exports = { db };
