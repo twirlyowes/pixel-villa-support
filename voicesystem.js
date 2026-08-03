@@ -4,15 +4,12 @@ const {
   PermissionsBitField,
   EmbedBuilder
 } = require("discord.js");
-const axios = require("axios");
+const db = require("./firebase");
 
 // CONFIGURATION: Set to your Join-to-Create voice channel ID
 const CREATE_CHANNEL_ID = "1522833037346214030";
 const TARGET_CATEGORY_ID = "1531893602706526208"; // Optional: Put your temporary category ID here so it only sweeps this category!
 
-// --- JSONBIN CONFIGURATION ---
-const BIN_ID = "6a6b0441da38895dfea322da";
-const API_KEY = "$2a$10$7ax1ElP/SmGzPF3ag1EEV.xZOjE8SCqV1YAhLFmKhwMTV.U7nS5s2";
 
 // Active temporary channels tracker: Map<ChannelID, OwnerID>
 const activeTempChannels = new Map();
@@ -34,50 +31,30 @@ const VALID_VC_COMMANDS = new Set([
 ]);
 
 // Helper functions for JSONBin API communication with robust error handling and retries
-async function fetchJSONBin(retries = 3, delay = 2000) {
-  for (let attempt = 1; attempt <= retries; attempt++) {
-    try {
-      const response = await axios.get(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
-        headers: { 
-          "X-Master-Key": API_KEY 
-        },
-        timeout: 10000
-      });
-      return response.data.record || { channels: {} };
-    } catch (error) {
-      console.warn(`[JSONBin] Attempt ${attempt} failed fetching data: ${error.message}`);
-      if (attempt === retries) {
-        console.error("[JSONBin] All retry attempts failed for fetch. Returning fallback cache structure.");
-        return { channels: {} };
-      }
-      await new Promise(res => setTimeout(res, delay));
-    }
-  }
-  return { channels: {} };
+async function loadVoiceChannels() {
+  const snapshot = await db.collection("voiceChannels").get();
+
+  const channels = {};
+
+  snapshot.forEach(doc => {
+    channels[doc.id] = doc.data();
+  });
+
+  return { channels };
 }
 
-async function updateJSONBin(data, retries = 3, delay = 2000) {
-  for (let attempt = 1; attempt <= retries; attempt++) {
-    try {
-      await axios.put(`https://api.jsonbin.io/v3/b/${BIN_ID}`, data, {
-        headers: {
-          "Content-Type": "application/json",
-          "X-Master-Key": API_KEY
-        },
-        timeout: 10000
-      });
-      console.log("[JSONBin] Successfully synced data storage.");
-      return;
-    } catch (error) {
-      console.warn(`[JSONBin] Attempt ${attempt} failed updating data: ${error.message}`);
-      if (attempt === retries) {
-        console.error("[JSONBin] All retry attempts failed for update. Changes kept locally.");
-        return;
-      }
-      await new Promise(res => setTimeout(res, delay));
-    }
-  }
+async function saveVoiceChannel(id, data) {
+  await db.collection("voiceChannels")
+    .doc(id)
+    .set(data);
 }
+
+async function deleteVoiceChannel(id) {
+  await db.collection("voiceChannels")
+    .doc(id)
+    .delete();
+}
+      
 
 module.exports = (client) => {
 
@@ -85,7 +62,7 @@ module.exports = (client) => {
   client.once("ready", async () => {
     try {
       console.log(`[VoiceSystem] Bot logged in as ${client.user.tag}. Running startup sweep and restoration...`);
-      const binData = await fetchJSONBin();
+      const binData = await loadVoiceChannels();
       if (!binData.channels) binData.channels = {};
 
       let dataChanged = false;  
@@ -114,7 +91,9 @@ module.exports = (client) => {
       }  
 
       if (dataChanged) {  
-        await updateJSONBin(binData);  
+        for (const [id, data] of Object.entries(binData.channels)) {
+  await saveVoiceChannel(id, data);
+        }
       }  
     } catch (err) {  
       console.error("Error during startup voice channel cleanup sweep & JSONBin sync:", err);  
@@ -216,13 +195,11 @@ module.exports = (client) => {
         activeTempChannels.set(tempChannel.id, member.id);  
         console.log(`[VoiceSystem] Created new temp channel: ${tempChannel.name} (${tempChannel.id}) for owner: ${member.user.tag}`);
 
-        const binData = await fetchJSONBin();  
-        if (!binData.channels) binData.channels = {};  
-        binData.channels[tempChannel.id] = {  
-          owner: member.id,  
-          createdAt: Date.now()  
-        };  
-        await updateJSONBin(binData);  
+        await saveVoiceChannel(tempChannel.id, {
+  owner: member.id,
+  createdAt: Date.now(),
+  guildId: guild.id
+});  
 
         const controlEmbed = new EmbedBuilder()
   .setColor("#5865F2")
