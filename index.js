@@ -111,7 +111,7 @@ client.once("ready", () => {
   ],
   status: "online",
 });
-
+});
 client.on("messageCreate", async (message) => {
   if (message.author.bot || !message.guild) return;
 
