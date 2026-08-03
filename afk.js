@@ -126,7 +126,11 @@ module.exports = (client) => {
         setupAt: time
     });
 
-    await saveAFK();
+    await saveAFK(message.author.id, {
+    reason,
+    time,
+    setupAt: time
+});
 
     const embed = new EmbedBuilder()
         .setColor("#F1C40F")
