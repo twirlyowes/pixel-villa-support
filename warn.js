@@ -1,41 +1,44 @@
 // Location: warn.js
 const { EmbedBuilder } = require("discord.js");
-const config = require("./config.json"); // Load config to read role and log channel IDs
+const config = require("./config.json");
+const { db } = require("./firebase");
 
-// --- JSONBIN CONFIGURATION FOR WARNINGS ---
-const BIN_ID = "6a61af41f5f4af5e29b43bac";
-const API_KEY = "$2a$10$7ax1ElP/SmGzPF3ag1EEV.xZOjE8SCqV1YAhLFmKhwMTV.U7nS5s2";
-// ------------------------------------------
+// Helper functions to fetch and save warnings from/to firebase
 
-// Helper functions to fetch and save warnings from/to JSONBin
+
 async function getWarnings() {
   try {
-    const response = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
-      headers: { "X-Master-Key": API_KEY }
+    const snapshot = await db.collection("warnings").get();
+
+    const warnings = {};
+
+    snapshot.forEach(doc => {
+      warnings[doc.id] = doc.data().warnings || [];
     });
-    const data = await response.json();
-    return data.record || {};
+
+    return warnings;
+
   } catch (error) {
-    console.error("Failed to fetch warnings from JSONBin:", error);
+    console.error("❌ Firebase warning load error:", error);
     return {};
   }
 }
 
+
 async function saveWarnings(warnings) {
   try {
-    await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Master-Key": API_KEY
-      },
-      body: JSON.stringify(warnings)
-    });
+    for (const [userId, userWarnings] of Object.entries(warnings)) {
+      await db.collection("warnings").doc(userId).set({
+        warnings: userWarnings
+      });
+    }
+
+    console.log("✅ Warnings saved to Firebase");
+
   } catch (error) {
-    console.error("Failed to save warnings to JSONBin:", error);
+    console.error("❌ Firebase warning save error:", error);
   }
 }
-
 module.exports = (client) => {
   const PREFIX = ".";
 
