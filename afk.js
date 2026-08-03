@@ -177,8 +177,7 @@ Your AFK status has been enabled successfully.
         const duration = formatDuration(Date.now() - data.time);
 
         afkData.delete(message.author.id);
-        await saveAFK();
-
+await removeAFK(message.author.id);
         const embed = new EmbedBuilder()
             .setColor("#57F287")
             .setAuthor({
