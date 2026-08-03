@@ -4,7 +4,7 @@ const config = require("./config.json"); // Load config to read role and log cha
 
 // --- JSONBIN CONFIGURATION FOR WARNINGS ---
 const BIN_ID = "6a61af41f5f4af5e29b43bac";
-const API_KEY = "$2a$10$aCLBlkuqB51DVhDxNoqisureJOzr5ljUp6AyTncij4YryQSiAKPwa";
+const API_KEY = "$2a$10$7ax1ElP/SmGzPF3ag1EEV.xZOjE8SCqV1YAhLFmKhwMTV.U7nS5s2";
 // ------------------------------------------
 
 // Helper functions to fetch and save warnings from/to JSONBin
