@@ -27,17 +27,6 @@ async function getWarnings() {
 
 async function saveWarnings(warnings) {
   try {
-
-    // Remove deleted users from Firebase
-    const snapshot = await db.collection("warnings").get();
-
-    for (const doc of snapshot.docs) {
-      if (!warnings[doc.id]) {
-        await db.collection("warnings").doc(doc.id).delete();
-      }
-    }
-
-    // Save current warnings
     for (const [userId, userWarnings] of Object.entries(warnings)) {
       await db.collection("warnings").doc(userId).set({
         warnings: userWarnings
@@ -49,7 +38,8 @@ async function saveWarnings(warnings) {
   } catch (error) {
     console.error("❌ Firebase warning save error:", error);
   }
-}
+        }
+
 module.exports = (client) => {
   const PREFIX = ".";
 
@@ -308,13 +298,15 @@ if (command === "wremove") {
 
   const removed = warnings[user.id].splice(warnIndex, 1)[0];
 
-  // Remove user document if no warnings left
-  if (warnings[user.id].length === 0) {
-    delete warnings[user.id];
-  }
-
-  // Firebase save
-  await saveWarnings(warnings);
+if (warnings[user.id].length === 0) {
+  // Delete user completely from Firebase
+  await db.collection("warnings").doc(user.id).delete();
+} else {
+  // Update remaining warnings only
+  await db.collection("warnings").doc(user.id).set({
+    warnings: warnings[user.id]
+  });
+}
 
   const embed = new EmbedBuilder()
     .setColor("#57F287")
@@ -401,11 +393,8 @@ if (command === "wreset") {
     });
   }
 
-  // Remove warnings from Firebase data
-  delete warnings[user.id];
-
-  // Firebase save
-  await saveWarnings(warnings);
+  // Delete warnings directly from Firebase
+await db.collection("warnings").doc(user.id).delete();
 
   const embed = new EmbedBuilder()
     .setColor("#57F287")
