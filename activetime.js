@@ -129,7 +129,7 @@ module.exports = (client) => {
         voiceSessions.set(userId, currentTimestamp);
       }
       await saveTimesToFileWithQueue();
-    }, 5 * 60 * 1000);
+    }, 15 * 60 * 1000);
   });
 
   function startClockChecker(clientInstance) {
@@ -266,7 +266,7 @@ module.exports = (client) => {
         const duration = Date.now() - activeSessions.get(userId);
         dailyActiveTimes.set(userId, (dailyActiveTimes.get(userId) || 0) + duration);
         activeSessions.delete(userId);
-        saveTimesToFileWithQueue();
+        
       }
     }
   });
@@ -288,7 +288,7 @@ module.exports = (client) => {
         const duration = Date.now() - voiceSessions.get(userId);
         dailyVoiceTimes.set(userId, (dailyVoiceTimes.get(userId) || 0) + duration);
         voiceSessions.delete(userId);
-        saveTimesToFileWithQueue();
+        
       }
     }
   });
@@ -436,3 +436,51 @@ return message.reply({ embeds: [embed] });
     }
   });
 };
+
+// =========================
+// Graceful Shutdown Handler
+// =========================
+
+let shuttingDown = false;
+
+async function handleShutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+
+  console.log(`🛑 Received ${signal}. Saving active times before shutdown...`);
+
+  try {
+    // Update active sessions before saving
+    const now = Date.now();
+
+    for (const [userId, startTime] of activeSessions.entries()) {
+      const duration = now - startTime;
+      dailyActiveTimes.set(
+        userId,
+        (dailyActiveTimes.get(userId) || 0) + duration
+      );
+      activeSessions.set(userId, now);
+    }
+
+    // Update voice sessions before saving
+    for (const [userId, startTime] of voiceSessions.entries()) {
+      const duration = now - startTime;
+      dailyVoiceTimes.set(
+        userId,
+        (dailyVoiceTimes.get(userId) || 0) + duration
+      );
+      voiceSessions.set(userId, now);
+    }
+
+    await saveTimesToFileWithQueue();
+
+    console.log("✅ Active times saved successfully.");
+  } catch (err) {
+    console.error("❌ Failed to save active times during shutdown:", err);
+  }
+
+  process.exit(0);
+}
+
+process.on("SIGINT", () => handleShutdown("SIGINT"));
+process.on("SIGTERM", () => handleShutdown("SIGTERM"));
