@@ -1,14 +1,11 @@
 // Location: activetime.js
 const { EmbedBuilder } = require("discord.js");
+const db = require("./firebase");
 
 const STAFF_ROLE_ID = "1511051007772069929"; 
 const LOG_CHANNEL_ID = "1523648445276098680"; 
 const ATLOGS_ROLE_ID = "1519005080471343216";
 
-// --- JSONBIN CONFIGURATION ---
-const BIN_ID = "6a61ab71da38895dfe82b0cc";
-const API_KEY = "$2a$10$7ax1ElP/SmGzPF3ag1EEV.xZOjE8SCqV1YAhLFmKhwMTV.U7nS5s2";
-// -----------------------------
 
 const activeSessions = new Map();
 const voiceSessions = new Map();
@@ -21,59 +18,58 @@ let dailyCommandCounts = new Map();
 let isSaving = false;
 let savePending = false;
 
+
 async function loadSavedTimes() {
   try {
-    const response = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
-      headers: { "X-Master-Key": API_KEY }
+    const snapshot = await db.collection("activetime").get();
+
+    snapshot.forEach(doc => {
+      const data = doc.data();
+
+      dailyActiveTimes.set(doc.id, data.activeTime || 0);
+      dailyVoiceTimes.set(doc.id, data.voiceTime || 0);
+      dailyMessageCounts.set(doc.id, data.messages || 0);
+      dailyCommandCounts.set(doc.id, data.commands || 0);
     });
-    const data = await response.json();
-    const json = data.record || {};
-    
-    dailyActiveTimes = new Map(Object.entries(json.activeTimes || {}).map(([k, v]) => [k, Number(v)]));
-    dailyVoiceTimes = new Map(Object.entries(json.voiceTimes || {}).map(([k, v]) => [k, Number(v)]));
-    dailyMessageCounts = new Map(Object.entries(json.messageCounts || {}).map(([k, v]) => [k, Number(v)]));
-    dailyCommandCounts = new Map(Object.entries(json.commandCounts || {}).map(([k, v]) => [k, Number(v)]));
+
+    console.log("✅ Active times loaded from Firebase");
   } catch (error) {
-    console.error("Error reading from JSONBin:", error);
+    console.error("❌ Firebase load error:", error);
   }
 }
 
 async function executeSaveWithRetry() {
-  const delays = [10000, 30000, 60000];
-  const payload = {
-    activeTimes: Object.fromEntries(dailyActiveTimes),
-    voiceTimes: Object.fromEntries(dailyVoiceTimes),
-    messageCounts: Object.fromEntries(dailyMessageCounts),
-    commandCounts: Object.fromEntries(dailyCommandCounts)
-  };
+  try {
+    const batch = db.batch();
 
-  for (let attempt = 0; attempt <= delays.length; attempt++) {
-    try {
-      const response = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Master-Key": API_KEY
-        },
-        body: JSON.stringify(payload)
-      });
+    const users = new Set([
+      ...dailyActiveTimes.keys(),
+      ...dailyVoiceTimes.keys(),
+      ...dailyMessageCounts.keys(),
+      ...dailyCommandCounts.keys()
+    ]);
 
-      if (response.ok) {
-        return true;
-      } else {
-        console.warn(`JSONBin save failed with HTTP status ${response.status} (Attempt ${attempt + 1})`);
-      }
-    } catch (error) {
-      console.warn(`JSONBin save threw an exception (Attempt ${attempt + 1}):`, error);
+    for (const userId of users) {
+      const ref = db.collection("activetime").doc(userId);
+
+      batch.set(ref, {
+        activeTime: dailyActiveTimes.get(userId) || 0,
+        voiceTime: dailyVoiceTimes.get(userId) || 0,
+        messages: dailyMessageCounts.get(userId) || 0,
+        commands: dailyCommandCounts.get(userId) || 0,
+        updatedAt: new Date()
+      }, { merge: true });
     }
 
-    if (attempt < delays.length) {
-      await new Promise(resolve => setTimeout(resolve, delays[attempt]));
-    }
+    await batch.commit();
+
+    console.log("✅ Active times saved to Firebase");
+    return true;
+
+  } catch (error) {
+    console.error("❌ Firebase save error:", error);
+    return false;
   }
-
-  console.error("Permanent failure saving to JSONBin after all retries have been exhausted.");
-  return false;
 }
 
 async function saveTimesToFileWithQueue() {
