@@ -102,14 +102,14 @@ client.once("ready", () => {
   console.log(`${client.user.tag} is online and fully optimized!`);
 
   client.user.setPresence({
-    activities: [
-      {
-        name: "Pixel Villa",
-        type: ActivityType.Watching,
-      },
-    ],
-    status: "idle",
-  });
+  activities: [
+    {
+      name: "Pixel Villa Support",
+      type: ActivityType.Streaming,
+      url: "https://www.twitch.tv/discord",
+    },
+  ],
+  status: "online",
 });
 
 client.on("messageCreate", async (message) => {
