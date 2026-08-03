@@ -100,10 +100,11 @@ module.exports = (client) => {
           });
         }
 
-        const warnings = await getWarnings();
-        if (!warnings[user.id]) {
-          warnings[user.id] = [];
-        }
+        const userDoc = await db.collection("warnings").doc(user.id).get();
+
+const userWarnings = userDoc.exists
+  ? userDoc.data().warnings || []
+  : [];
 
         // Generate a random 6-digit Warning ID
         const warnId = Math.floor(100000 + Math.random() * 900000).toString();
@@ -116,8 +117,11 @@ module.exports = (client) => {
           timestamp: now.toISOString()
         };
 
-        warnings[user.id].push(newWarning);
-        await saveWarnings(warnings);
+        userWarnings.push(newWarning);
+
+await db.collection("warnings").doc(user.id).set({
+  warnings: userWarnings
+});
 
         // Attempt to DM the warned user
         let dmedUser = "Yes";
@@ -154,7 +158,7 @@ module.exports = (client) => {
             { name: "Timestamp", value: formattedDate },
             { name: "Warning ID", value: warnId },
             { name: "Member Notified", value: dmedUser },
-            { name: "Total Warnings", value: `${warnings[user.id].length}/5` }
+            { name: "Total Warnings", value: `${userWarnings.length}/5` }
           );
 
         // Send confirmation in current channel
