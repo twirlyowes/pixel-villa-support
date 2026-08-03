@@ -313,7 +313,7 @@ if (command === "vcp") {
     }).catch(() => {});
   }
 });
-    
+require("./firebase");    
 console.log("Loading help...");
 require("./help")(client);
 
