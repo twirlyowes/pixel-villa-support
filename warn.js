@@ -27,6 +27,17 @@ async function getWarnings() {
 
 async function saveWarnings(warnings) {
   try {
+
+    // Remove deleted users from Firebase
+    const snapshot = await db.collection("warnings").get();
+
+    for (const doc of snapshot.docs) {
+      if (!warnings[doc.id]) {
+        await db.collection("warnings").doc(doc.id).delete();
+      }
+    }
+
+    // Save current warnings
     for (const [userId, userWarnings] of Object.entries(warnings)) {
       await db.collection("warnings").doc(userId).set({
         warnings: userWarnings
