@@ -7,7 +7,7 @@ const ATLOGS_ROLE_ID = "1519005080471343216";
 
 // --- JSONBIN CONFIGURATION ---
 const BIN_ID = "6a61ab71da38895dfe82b0cc";
-const API_KEY = "$2a$10$aCLBlkuqB51DVhDxNoqisureJOzr5ljUp6AyTncij4YryQSiAKPwa";
+const API_KEY = "$2a$10$7ax1ElP/SmGzPF3ag1EEV.xZOjE8SCqV1YAhLFmKhwMTV.U7nS5s2";
 // -----------------------------
 
 const activeSessions = new Map();
