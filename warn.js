@@ -240,56 +240,85 @@ if (command === "wremove") {
 
   if (!user) {
     return message.channel.send({
-      embeds: [makeEmbed("Red", `**Usage:** ${PREFIX}wremove @user <warning ID>`)]
+      embeds: [
+        makeEmbed(
+          "#E74C3C",
+          "<a:error:1532986765105696778> Invalid Usage",
+          `**Usage:** \`${PREFIX}wremove @user <warning ID>\``
+        )
+      ]
     });
   }
 
-  const warnId = args[1];
+  const warnId = args.find(arg => /^\d{6}$/.test(arg));
 
   if (!warnId) {
     return message.channel.send({
-      embeds: [makeEmbed("Red", `**Please provide a Warning ID.**\n\nUsage: \`${PREFIX}wremove @user <warning ID>\``)]
+      embeds: [
+        makeEmbed(
+          "#E74C3C",
+          "<a:error:1532986765105696778> Missing Warning ID",
+          `Please provide a valid Warning ID.\n\n**Usage:** \`${PREFIX}wremove @user <warning ID>\``
+        )
+      ]
     });
   }
 
+  // Firebase load
   const warnings = await getWarnings();
 
   if (!warnings[user.id] || warnings[user.id].length === 0) {
     return message.channel.send({
-      embeds: [makeEmbed("Red", `**${user.user.tag}** doesn't have any warnings to remove.`)]
+      embeds: [
+        makeEmbed(
+          "#E74C3C",
+          "<a:error:1532986765105696778> No Warnings Found",
+          `**${user.user.tag}** has no warnings to remove.`
+        )
+      ]
     });
   }
 
-  const warnIndex = warnings[user.id].findIndex(w => w.id === warnId);
+  const warnIndex = warnings[user.id].findIndex(
+    warn => warn.id === warnId
+  );
 
   if (warnIndex === -1) {
     return message.channel.send({
-      embeds: [makeEmbed("Red", `No warning found with ID **${warnId}**.`)]
+      embeds: [
+        makeEmbed(
+          "#E74C3C",
+          "<a:error:1532986765105696778> Warning Not Found",
+          `No warning found with ID **${warnId}**.`
+        )
+      ]
     });
   }
 
   const removed = warnings[user.id].splice(warnIndex, 1)[0];
 
+  // Remove user document if no warnings left
   if (warnings[user.id].length === 0) {
     delete warnings[user.id];
   }
 
+  // Firebase save
   await saveWarnings(warnings);
 
   const embed = new EmbedBuilder()
-  .setColor("#57F287")
-  .setAuthor({
-    name: "Pixel Villa Support • Warning System",
-    iconURL: client.user.displayAvatarURL()
-  })
-  .setThumbnail(user.user.displayAvatarURL({ dynamic: true }))
-  .setTitle("<a:success:1532986625343099050> Warning Removed")
-  .setDescription(
+    .setColor("#57F287")
+    .setAuthor({
+      name: "Pixel Villa Support • Warning System",
+      iconURL: client.user.displayAvatarURL()
+    })
+    .setThumbnail(user.user.displayAvatarURL({ dynamic: true }))
+    .setTitle("<a:success:1532986625343099050> Warning Removed")
+    .setDescription(
 `<:Shield_2:1532989398642327594> **User**
 > ${user}
 
-<:Stats:1532990723408793661> **Warning ID**
-> ${removed.id}
+<a:Warning:1532986372716236932> **Warning ID**
+> \`${removed.id}\`
 
 <a:LP_Message:1532991009066324049> **Reason**
 > ${removed.reason}
@@ -303,54 +332,79 @@ if (command === "wremove") {
 ━━━━━━━━━━━━━━━━━━━━━━
 
 <a:sparkles:1532986077651140620> Warning has been removed successfully.`
-  )
-  .setFooter({
-    text: "Pixel Villa Support • Moderation"
-  })
-  .setTimestamp();
+    )
+    .setFooter({
+      text: "Pixel Villa Support • Moderation"
+    })
+    .setTimestamp();
 
-  await message.channel.send({ embeds: [embed] });
+  await message.channel.send({
+    embeds: [embed]
+  });
 
-  // Send to log channel
+  // Log channel
   if (config.LOG_CHANNEL_ID) {
     try {
       const logChannel = await message.guild.channels.fetch(config.LOG_CHANNEL_ID);
+
       if (logChannel) {
-        await logChannel.send({ embeds: [embed] });
+        await logChannel.send({
+          embeds: [embed]
+        });
       }
+
     } catch (err) {
-      console.error("Failed to send warning removal log:", err);
+      console.error("❌ Warning removal log error:", err);
     }
   }
-    }      
-
-      // 4. RESET ALL WARNINGS COMMAND (.wreset)
-      if (command === "wreset") {
-        const user = message.mentions.members.find(m => message.content.includes(m.id));
-        if (!user) {
-          return message.channel.send({
-            embeds: [makeEmbed("Red", `**Usage:** ${PREFIX}wreset @user`)]
-          });
         }
 
-        const warnings = await getWarnings();
-        if (!warnings[user.id] || warnings[user.id].length === 0) {
-          return message.channel.send({
-            embeds: [makeEmbed("Red", `**${user.user.tag}** doesn't have any warnings to reset.`)]
-          });
-        }
-        delete warnings[user.id];
-        await saveWarnings(warnings);
+  // 4. RESET ALL WARNINGS COMMAND (.wreset)
+if (command === "wreset") {
+  const user = message.mentions.members.first();
 
-        const embed = new EmbedBuilder()
-  .setColor("#57F287")
-  .setAuthor({
-    name: "Pixel Villa Support • Warning System",
-    iconURL: client.user.displayAvatarURL()
-  })
-  .setThumbnail(user.user.displayAvatarURL({ dynamic: true }))
-  .setTitle("<a:success:1532986625343099050> Warning History Reset")
-  .setDescription(
+  if (!user) {
+    return message.channel.send({
+      embeds: [
+        makeEmbed(
+          "#E74C3C",
+          "<a:error:1532986765105696778> Invalid Usage",
+          `**Usage:** \`${PREFIX}wreset @user\``
+        )
+      ]
+    });
+  }
+
+  // Firebase load
+  const warnings = await getWarnings();
+
+  if (!warnings[user.id] || warnings[user.id].length === 0) {
+    return message.channel.send({
+      embeds: [
+        makeEmbed(
+          "#E74C3C",
+          "<a:error:1532986765105696778> No Warnings Found",
+          `**${user.user.tag}** does not have any warnings to reset.`
+        )
+      ]
+    });
+  }
+
+  // Remove warnings from Firebase data
+  delete warnings[user.id];
+
+  // Firebase save
+  await saveWarnings(warnings);
+
+  const embed = new EmbedBuilder()
+    .setColor("#57F287")
+    .setAuthor({
+      name: "Pixel Villa Support • Warning System",
+      iconURL: client.user.displayAvatarURL()
+    })
+    .setThumbnail(user.user.displayAvatarURL({ dynamic: true }))
+    .setTitle("<a:success:1532986625343099050> Warning History Reset")
+    .setDescription(
 `<:Shield_2:1532989398642327594> **User**
 > ${user}
 
@@ -363,25 +417,35 @@ if (command === "wremove") {
 ━━━━━━━━━━━━━━━━━━━━━━
 
 <a:sparkles:1532986077651140620> Infraction history has been cleared successfully.`
-  )
-  .setFooter({
-    text: "Pixel Villa Support • Moderation"
-  })
-  .setTimestamp();
-        await message.channel.send({ embeds: [embed] });
+    )
+    .setFooter({
+      text: "Pixel Villa Support • Moderation"
+    })
+    .setTimestamp();
 
-        // FIX: Fetch the channel asynchronously instead of relying purely on memory cache
-        if (config.LOG_CHANNEL_ID) {
-          try {
-            const logChannel = await message.guild.channels.fetch(config.LOG_CHANNEL_ID);
-            if (logChannel) {
-              await logChannel.send({ embeds: [embed] });
-            }
-          } catch (err) {
-            console.error("Failed to fetch or send to staff log channel:", err);
-          }
-        }
+  await message.channel.send({
+    embeds: [embed]
+  });
+
+  // Log channel
+  if (config.LOG_CHANNEL_ID) {
+    try {
+      const logChannel = await message.guild.channels.fetch(config.LOG_CHANNEL_ID);
+
+      if (logChannel) {
+        await logChannel.send({
+          embeds: [embed]
+        });
       }
+
+    } catch (err) {
+      console.error("❌ Warning reset log error:", err);
+    }
+  }
+    }
+  
+
+      
     } catch (error) {
       console.error("Error executing warning structure:", error);
       message.channel.send({
