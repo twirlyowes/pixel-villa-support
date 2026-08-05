@@ -83,18 +83,21 @@ words.shift(); // words array without the primary command word
         const avatarURL = targetUser.displayAvatarURL({ size: 4096, dynamic: true });
 
         const embed = new EmbedBuilder()
-  .setColor("#5865F2")
-  .setAuthor({
-    name: `${targetUser.tag}`,
-    iconURL: targetUser.displayAvatarURL({ dynamic: true })
-  })
-  .setTitle("Avatar")
-  .setImage(avatarURL)
-  .setFooter({
-    text: `Requested by ${message.author.tag}`,
-    iconURL: message.author.displayAvatarURL({ dynamic: true })
-  })
-  .setTimestamp();
+    .setColor(0x5865F2)
+    .setAuthor({
+        name: `${targetUser.tag}`,
+        iconURL: targetUser.displayAvatarURL({ dynamic: true })
+    })
+    .setImage(
+        targetUser.displayAvatarURL({
+            size: 4096,
+            dynamic: true
+        })
+    )
+    .setFooter({
+        text: `Requested by ${message.author.tag}`
+    })
+    .setTimestamp();
 
         const row = new ActionRowBuilder().addComponents(
           new ButtonBuilder().setLabel("PNG Format").setStyle(ButtonStyle.Link).setURL(targetUser.displayAvatarURL({ extension: "png", size: 4096 })),
