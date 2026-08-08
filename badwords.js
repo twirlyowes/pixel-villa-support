@@ -89,22 +89,46 @@ module.exports = (client) => {
             // ==========================================
             // MODULE 2: BAD WORD FILTER (Skips Staff)
 // ==========================================
-if (isStaff) return;
-
 const normalized = message.content.toLowerCase();
 
-let found = false;
+const specificWords = {
+    "adriend": "Adrien",
+    "adreind": "Adrien"
+};
 
-for (const word of badWordsCache) {
-    const regex = new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+let found = false;
+let detectedWord = null;
+
+// Specific words apply to EVERYONE, including staff
+for (const [word, displayName] of Object.entries(specificWords)) {
+    const regex = new RegExp(`\\b${word}\\b`, "i");
 
     if (regex.test(normalized)) {
         found = true;
+        detectedWord = displayName;
         break;
     }
 }
 
+// Normal bad words skip staff
+if (!found && !isStaff) {
+    for (const word of badWordsCache) {
+        const regex = new RegExp(
+            `\\b${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`,
+            "i"
+        );
+
+        if (regex.test(normalized)) {
+            found = true;
+            detectedWord = word;
+            break;
+        }
+    }
+}
+
 if (!found) return;
+
+
 
             const deletedMessage = message.content;
 
