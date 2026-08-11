@@ -74,7 +74,7 @@ module.exports = function(client) {
             const args = message.content.trim().split(/ +/);
             const command = args.shift().toLowerCase();
 
-            if (command === "x!snipe") {
+            if (command === "snipe") {
                 if (!message.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
                     return message.reply({ content: "❌ You do not have permission to use this command (Requires **Manage Messages**).", ephemeral: true }).catch(() => {});
                 }
