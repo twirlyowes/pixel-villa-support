@@ -4,7 +4,8 @@ const {
   GatewayIntentBits,
   EmbedBuilder,
   PermissionsBitField,
-  ActivityType
+  ActivityType,
+  Partials
 } = require("discord.js");
 const fs = require("fs").promises; // Non-blocking async fs
 const path = require("path");
@@ -18,7 +19,15 @@ const client = new Client({
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildPresences
+    GatewayIntentBits.GuildPresences,
+
+    // REQUIRED FOR MODMAIL DMs
+    GatewayIntentBits.DirectMessages
+  ],
+
+  // REQUIRED FOR DM CHANNELS
+  partials: [
+    Partials.Channel
   ]
 });
 
