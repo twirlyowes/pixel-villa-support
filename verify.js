@@ -295,7 +295,12 @@ module.exports = function(client) {
                 }
             }
 
-            
+        } catch (error) {
+            console.error("Command Execution Error:", error);
+            return message.reply("❌ An error occurred while attempting to process that command.").catch(() => {});
+        }
+    });
+
     // 3. Interaction Handler (Verify Button & Captcha Modal Submissions)
     client.on('interactionCreate', async interaction => {
         try {
