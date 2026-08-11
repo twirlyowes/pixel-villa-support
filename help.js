@@ -1374,4 +1374,7 @@ class ModMailSystem {
  */
 const modmail = new ModMailSystem();
 
-module.exports = modmail;
+module.exports = function (client) {
+    modmail.attach(client);
+    return modmail;
+};
