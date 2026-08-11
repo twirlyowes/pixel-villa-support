@@ -128,7 +128,7 @@ module.exports = function(client) {
             console.error("Error in snipe command handler:", error);
         }
     });
-};
+
 
     // 2. Command Handler (.setup..., role, snipe)
     client.on('messageCreate', async message => {
