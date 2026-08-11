@@ -7,12 +7,21 @@ const {
     ButtonStyle,
     ChannelType,
     PermissionFlagsBits,
-    Client
+    GatewayIntentBits,
+    Partials
 } = require("discord.js");
+
+/* =========================================================
+   PIXEL VILLA SUPPORT — MODMAIL
+   Compatible with:
+       require("./help")(client);
+   ========================================================= */
 
 const MODMAIL_CONFIG = {
     guildId: "1510176142286389329",
+
     ticketCategoryId: "1521077017569656946",
+
     logsChannelId: "1510571308952326189",
 
     supportRoles: {
@@ -30,1076 +39,815 @@ const CATEGORY_NAMES = {
 
 const VALID_CATEGORIES = ["minecraft", "discord", "others"];
 
-class ModMailSystem {
-    constructor() {
-        this.client = null;
-        this.db = null;
 
-        this.attached = false;
-        this.listenersRegistered = false;
-        this.databaseLoaded = false;
+/* =========================================================
+   FIREBASE LOADER
+   ========================================================= */
 
-        this.ticketCreationLocks = new Set();
-        this.closingLocks = new Set();
+function loadFirestore() {
+    const possiblePaths = [
+        "./firebase",
+        "./firebase.js",
+        "../firebase",
+        "./utils/firebase"
+    ];
 
-        this.hookClient();
-    }
-
-    /**
-     * Automatically finds the existing Discord client.
-     * No changes to index.js are required.
-     */
-    hookClient() {
-        // First try to find an already-created client in require.cache.
+    for (const file of possiblePaths) {
         try {
-            for (const cachedPath of Object.keys(require.cache)) {
-                try {
-                    const mod = require.cache[cachedPath];
+            const firebase = require(file);
 
-                    if (!mod || !mod.exports) continue;
+            if (firebase.firestore && typeof firebase.firestore === "function") {
+                const db = firebase.firestore();
 
-                    // Direct client export
-                    if (
-                        mod.exports instanceof Client ||
-                        (
-                            mod.exports.user &&
-                            typeof mod.exports.login === "function" &&
-                            typeof mod.exports.on === "function"
-                        )
-                    ) {
-                        this.attach(mod.exports);
-                        return;
-                    }
-
-                    // { client } export
-                    if (
-                        mod.exports.client &&
-                        typeof mod.exports.client.login === "function" &&
-                        typeof mod.exports.client.on === "function"
-                    ) {
-                        this.attach(mod.exports.client);
-                        return;
-                    }
-                } catch {
-                    // Ignore individual cache inspection errors.
+                if (db) {
+                    console.log("[ModMail] Firestore loaded from " + file);
+                    return db;
                 }
+            }
+
+            if (firebase.db) {
+                console.log("[ModMail] Firestore loaded from " + file);
+                return firebase.db;
+            }
+
+            if (firebase.collection) {
+                console.log("[ModMail] Firestore loaded from " + file);
+                return firebase;
             }
         } catch (error) {
-            console.error("[ModMail] Client cache inspection error:", error);
-        }
-
-        /*
-         * If the client has not been created yet, hook Client.prototype.login.
-         *
-         * Store the ModMail instance on the prototype so that a module reload
-         * can replace the previous ModMail instance safely.
-         */
-        if (!Client.prototype.__pixelVillaModMailHook) {
-            const originalLogin = Client.prototype.login;
-
-            const hookData = {
-                originalLogin,
-                instance: this
-            };
-
-            Client.prototype.__pixelVillaModMailHook = hookData;
-
-            Client.prototype.login = function (...args) {
-                const currentHook =
-                    Client.prototype.__pixelVillaModMailHook;
-
-                if (currentHook && currentHook.instance) {
-                    currentHook.instance.attach(this);
-                }
-
-                return currentHook.originalLogin.apply(this, args);
-            };
-        } else {
-            Client.prototype.__pixelVillaModMailHook.instance = this;
+            // Try next Firebase path.
         }
     }
 
-    /**
-     * Attach ModMail to the existing Discord client.
-     */
-    async attach(client) {
-        if (!client) return;
+    try {
+        const admin = require("firebase-admin");
 
-        if (this.attached && this.client === client) {
-            return;
+        if (admin.apps.length > 0) {
+            console.log("[ModMail] Firestore loaded from firebase-admin");
+            return admin.firestore();
         }
-
-        this.attached = true;
-        this.client = client;
-
-        await this.loadDatabase();
-
-        this.registerListeners();
-
-        console.log(
-            "[ModMail] Pixel Villa Support ModMail system initialized successfully."
-        );
+    } catch (error) {
+        console.error("[ModMail] Firebase Admin could not be loaded:", error);
     }
 
-    /**
-     * Load the existing Firebase/Firestore instance.
+    return null;
+}
+
+
+/* =========================================================
+   MAIN MODMAIL SETUP
+   ========================================================= */
+
+module.exports = function setupModMail(client) {
+
+    if (!client) {
+        console.error("[ModMail] Client was not provided.");
+        return;
+    }
+
+    /*
+     * IMPORTANT:
+     * Your index.js calls this BEFORE client.login().
+     *
+     * Therefore we can safely add the DM intent and partial
+     * here without modifying index.js.
      */
-    async loadDatabase() {
-        if (this.databaseLoaded && this.db) return this.db;
 
-        this.databaseLoaded = true;
+    try {
+        if (client.options && client.options.intents) {
+            client.options.intents.add(
+                GatewayIntentBits.DirectMessages
+            );
 
-        const firebaseModules = [
-            "./firebase",
-            "./firebase.js",
-            "../firebase",
-            "./utils/firebase"
-        ];
-
-        for (const modulePath of firebaseModules) {
-            try {
-                const fb = require(modulePath);
-
-                if (!fb) continue;
-
-                /*
-                 * Support:
-                 * - firebase-admin export
-                 * - { db }
-                 * - { firestore() }
-                 * - direct Firestore instance
-                 */
-                if (typeof fb.firestore === "function") {
-                    this.db = fb.firestore();
-                } else if (fb.db) {
-                    this.db = fb.db;
-                } else if (typeof fb.collection === "function") {
-                    this.db = fb;
-                }
-
-                if (this.db) {
-                    console.log(
-                        `[ModMail] Firestore loaded from ${modulePath}`
-                    );
-                    return this.db;
-                }
-            } catch {
-                // Try the next Firebase path.
-            }
-        }
-
-        // Firebase Admin fallback.
-        try {
-            const admin = require("firebase-admin");
-
-            if (admin.apps.length > 0) {
-                this.db = admin.firestore();
-
-                console.log(
-                    "[ModMail] Firestore loaded from firebase-admin."
-                );
-
-                return this.db;
-            }
-        } catch (error) {
-            console.error(
-                "[ModMail] Firebase Admin fallback failed:",
-                error
+            client.options.intents.add(
+                GatewayIntentBits.MessageContent
             );
         }
 
-        this.db = null;
+        if (client.options) {
+            if (!Array.isArray(client.options.partials)) {
+                client.options.partials = [];
+            }
 
+            if (!client.options.partials.includes(Partials.Channel)) {
+                client.options.partials.push(Partials.Channel);
+            }
+        }
+
+        console.log("[ModMail] DM intents and partials configured.");
+    } catch (error) {
         console.error(
-            "[ModMail] Firestore could not be loaded. ModMail database features are unavailable."
+            "[ModMail] Failed to configure DM intents:",
+            error
         );
-
-        return null;
     }
 
-    /**
-     * Register Discord event listeners exactly once.
-     */
-    registerListeners() {
-        if (!this.client || this.listenersRegistered) return;
 
-        this.listenersRegistered = true;
+    /* =====================================================
+       PREVENT DOUBLE INITIALIZATION
+       ===================================================== */
 
-        this.client.on("messageCreate", async (message) => {
-            try {
-                await this.handleMessage(message);
-            } catch (error) {
-                console.error(
-                    "[ModMail] messageCreate error:",
-                    error
-                );
-            }
-        });
-
-        this.client.on("interactionCreate", async (interaction) => {
-            try {
-                if (interaction.isButton()) {
-                    await this.handleButton(interaction);
-                }
-            } catch (error) {
-                console.error(
-                    "[ModMail] interactionCreate error:",
-                    error
-                );
-            }
-        });
-
-        this.client.on("channelDelete", async (channel) => {
-            try {
-                await this.handleChannelDelete(channel);
-            } catch (error) {
-                console.error(
-                    "[ModMail] channelDelete error:",
-                    error
-                );
-            }
-        });
+    if (client.__pixelVillaModMailLoaded) {
+        console.log("[ModMail] Already loaded.");
+        return;
     }
 
-    /**
-     * Safely get attachment URLs from a Discord Collection.
-     */
-    getAttachmentUrls(message) {
-        return [...message.attachments.values()]
-            .map((attachment) => attachment.url)
-            .filter(Boolean);
+    client.__pixelVillaModMailLoaded = true;
+
+
+    /* =====================================================
+       DATABASE
+       ===================================================== */
+
+    const db = loadFirestore();
+
+    if (!db) {
+        console.error(
+            "[ModMail] ❌ Firestore could not be initialized."
+        );
+        return;
     }
 
-    /**
-     * Handle all incoming messages.
-     */
-    async handleMessage(message) {
-        if (!message || message.author?.bot) return;
-        if (!this.db || !this.client) return;
 
-        // =========================
-        // USER -> BOT DM
-        // =========================
-        if (message.channel.type === ChannelType.DM) {
-            return await this.handleUserDM(message);
-        }
+    /* =====================================================
+       LOCKS
+       ===================================================== */
 
-        // =========================
-        // STAFF -> USER
-        // =========================
-        if (
-            message.guild &&
-            message.guild.id === MODMAIL_CONFIG.guildId
-        ) {
-            return await this.handleStaffMessage(message);
-        }
+    const ticketCreationLocks = new Set();
+    const closingLocks = new Set();
+
+
+    /* =====================================================
+       HELPERS
+       ===================================================== */
+
+    async function getGuild() {
+        return await client.guilds
+            .fetch(MODMAIL_CONFIG.guildId)
+            .catch(() => null);
     }
 
-    /**
-     * Handle user DMs.
-     */
-    async handleUserDM(message) {
-        const userId = message.author.id;
 
-        const ticketsRef =
-            this.db.collection("modmail_tickets");
-
-        let snapshot;
-
+    async function getOpenTicket(userId) {
         try {
-            snapshot = await ticketsRef
+            const snapshot = await db
+                .collection("modmail_tickets")
                 .where("userId", "==", userId)
                 .where("status", "==", "open")
                 .limit(1)
                 .get();
+
+            if (snapshot.empty) {
+                return null;
+            }
+
+            return snapshot.docs[0];
         } catch (error) {
             console.error(
-                "[ModMail] Failed to check existing ticket:",
+                "[ModMail] Failed to find open ticket:",
                 error
             );
 
-            await message.author
-                .send(
-                    "❌ Support is temporarily unavailable. Please try again later."
-                )
-                .catch(() => {});
-
-            return;
+            return null;
         }
-
-        // Existing ticket
-        if (!snapshot.empty) {
-            const ticketDoc = snapshot.docs[0];
-            const ticketData = ticketDoc.data();
-
-            const guild = await this.client.guilds
-                .fetch(MODMAIL_CONFIG.guildId)
-                .catch(() => null);
-
-            if (!guild) return;
-
-            const channel = await guild.channels
-                .fetch(ticketData.channelId)
-                .catch(() => null);
-
-            // Ticket channel no longer exists.
-            if (!channel) {
-                await ticketDoc.ref
-                    .update({
-                        status: "closed",
-                        closedAt: new Date().toISOString(),
-                        closedBy: "system"
-                    })
-                    .catch(() => {});
-
-                return await this.startNewTicketFlow(message);
-            }
-
-            const files = this.getAttachmentUrls(message);
-
-            let content = message.content || "";
-
-            if (!content && files.length > 0) {
-                content = "*[Attachment(s)]*";
-            }
-
-            const forwardedContent =
-                `👤 **${message.author.tag}**\n${content}`;
-
-            try {
-                await channel.send({
-                    content: forwardedContent,
-                    files
-                });
-
-                await message.react("✅").catch(() => {});
-            } catch (error) {
-                console.error(
-                    "[ModMail] Failed to forward user DM:",
-                    error
-                );
-            }
-
-            return;
-        }
-
-        // No active ticket.
-        return await this.startNewTicketFlow(message);
     }
 
-    /**
-     * Handle staff messages inside ticket channels.
-     */
-    async handleStaffMessage(message) {
-        const ticketsRef =
-            this.db.collection("modmail_tickets");
 
-        let snapshot;
-
+    async function sendLog(guild, title, color, fields = []) {
         try {
-            snapshot = await ticketsRef
-                .where("channelId", "==", message.channel.id)
-                .where("status", "==", "open")
-                .limit(1)
-                .get();
-        } catch (error) {
-            console.error(
-                "[ModMail] Failed to find ticket:",
-                error
-            );
-            return;
-        }
+            const channel = await guild.channels
+                .fetch(MODMAIL_CONFIG.logsChannelId)
+                .catch(() => null);
 
-        if (snapshot.empty) return;
+            if (!channel) {
+                console.error(
+                    "[ModMail] Logs channel not found."
+                );
+                return;
+            }
 
-        const ticketDoc = snapshot.docs[0];
-        const ticketData = ticketDoc.data();
+            const embed = new EmbedBuilder()
+                .setColor(color || "#5865F2")
+                .setTitle(title)
+                .addFields(fields)
+                .setTimestamp();
 
-        // .close
-        if (
-            message.content &&
-            message.content.trim().toLowerCase() === ".close"
-        ) {
-            return await this.closeTicket(
-                message,
-                ticketDoc,
-                ticketData
-            );
-        }
-
-        const member = await message.guild.members
-            .fetch(message.author.id)
-            .catch(() => null);
-
-        if (!member) return;
-
-        const requiredRole =
-            MODMAIL_CONFIG.supportRoles[ticketData.category];
-
-        if (
-            !requiredRole ||
-            !member.roles.cache.has(requiredRole)
-        ) {
-            return;
-        }
-
-        const targetUser = await this.client.users
-            .fetch(ticketData.userId)
-            .catch(() => null);
-
-        if (!targetUser) {
-            await message.channel
-                .send(
-                    "⚠️ Failed to deliver message to user's DMs."
-                )
-                .catch(() => {});
-
-            return;
-        }
-
-        const files = this.getAttachmentUrls(message);
-
-        let description = message.content || "";
-
-        if (!description && files.length > 0) {
-            description = "*[Attachment(s)]*";
-        }
-
-        /*
-         * Discord embeds have a 4096 character description limit.
-         */
-        if (description.length > 4096) {
-            description =
-                description.substring(0, 4090) + "…";
-        }
-
-        const embed = new EmbedBuilder()
-            .setColor("#5865F2")
-            .setTitle("💬 Pixel Villa Support")
-            .setDescription(description)
-            .setTimestamp();
-
-        try {
-            await targetUser.send({
-                embeds: [embed],
-                files
+            await channel.send({
+                embeds: [embed]
             });
 
-            await message.react("✅").catch(() => {});
         } catch (error) {
             console.error(
-                "[ModMail] Failed to deliver staff message:",
+                "[ModMail] Failed to send log:",
                 error
             );
-
-            await message.channel
-                .send(
-                    "⚠️ Failed to deliver message to user's DMs."
-                )
-                .catch(() => {});
         }
     }
 
-    /**
-     * Store pending user messages and show category selection.
-     */
-    async startNewTicketFlow(message) {
-        if (!this.db) return;
+
+    function getAttachmentURLs(message) {
+        return [...message.attachments.values()].map(
+            attachment => attachment.url
+        );
+    }
+
+
+    function getMessageText(message) {
+        if (message.content && message.content.trim()) {
+            return message.content;
+        }
+
+        if (message.attachments.size > 0) {
+            return "*[Attachment(s)]*";
+        }
+
+        return "*[No message content]*";
+    }
+
+
+    /* =====================================================
+       START NEW TICKET FLOW
+       ===================================================== */
+
+    async function startNewTicketFlow(message) {
 
         const userId = message.author.id;
 
-        const pendingRef =
-            this.db.collection("modmail_pending").doc(userId);
-
-        const files = this.getAttachmentUrls(message);
-
-        const pendingMessage = {
-            content: message.content || "",
-            files,
-            timestamp: new Date().toISOString()
-        };
+        const pendingRef = db
+            .collection("modmail_pending")
+            .doc(userId);
 
         try {
-            const pendingDoc = await pendingRef.get();
 
-            if (pendingDoc.exists) {
-                const data = pendingDoc.data() || {};
+            const existingPending = await pendingRef.get();
+
+            const entry = {
+                content: message.content || "",
+                files: getAttachmentURLs(message),
+                timestamp: new Date().toISOString()
+            };
+
+
+            if (existingPending.exists) {
+
+                const data = existingPending.data();
 
                 const messages = Array.isArray(data.messages)
                     ? data.messages
                     : [];
 
-                messages.push(pendingMessage);
+                messages.push(entry);
 
                 await pendingRef.set(
                     {
-                        messages,
-                        updatedAt: new Date().toISOString()
+                        messages
                     },
-                    { merge: true }
+                    {
+                        merge: true
+                    }
                 );
 
-                /*
-                 * Do not send another category menu.
-                 */
-                return;
+            } else {
+
+                await pendingRef.set({
+                    messages: [entry]
+                });
+
             }
 
-            await pendingRef.set({
-                messages: [pendingMessage],
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString()
-            });
-        } catch (error) {
-            console.error(
-                "[ModMail] Failed to save pending message:",
-                error
-            );
-
-            return;
-        }
-
-        const embed = new EmbedBuilder()
-            .setColor("#2B2D31")
-            .setTitle("📨 Pixel Villa Support")
-            .setDescription(
-                "«Welcome to Pixel Villa Support.\nPlease select the category that best matches your query.»"
-            );
-
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId("modmail_minecraft")
-                .setLabel("Minecraft")
-                .setStyle(ButtonStyle.Primary)
-                .setEmoji("⛏️"),
-
-            new ButtonBuilder()
-                .setCustomId("modmail_discord")
-                .setLabel("Discord")
-                .setStyle(ButtonStyle.Secondary)
-                .setEmoji("💬"),
-
-            new ButtonBuilder()
-                .setCustomId("modmail_others")
-                .setLabel("Others")
-                .setStyle(ButtonStyle.Secondary)
-                .setEmoji("📩")
-        );
-
-        await message.author
-            .send({
-                embeds: [embed],
-                components: [row]
-            })
-            .catch(() => {});
-    }
-
-    /**
-     * Handle category buttons.
-     */
-    async handleButton(interaction) {
-        if (!interaction.customId.startsWith("modmail_")) {
-            return;
-        }
-
-        if (!this.db) {
-            await interaction
-                .reply({
-                    content:
-                        "❌ Support is temporarily unavailable. Please try again later.",
-                    ephemeral: true
-                })
-                .catch(() => {});
-
-            return;
-        }
-
-        const categoryKey =
-            interaction.customId.replace("modmail_", "");
-
-        if (!VALID_CATEGORIES.includes(categoryKey)) {
-            await interaction
-                .reply({
-                    content: "❌ Invalid category selection.",
-                    ephemeral: true
-                })
-                .catch(() => {});
-
-            return;
-        }
-
-        const userId = interaction.user.id;
-
-        if (this.ticketCreationLocks.has(userId)) {
-            await interaction
-                .reply({
-                    content:
-                        "⏳ Your ticket is already being created, please wait...",
-                    ephemeral: true
-                })
-                .catch(() => {});
-
-            return;
-        }
-
-        this.ticketCreationLocks.add(userId);
-
-        try {
-            const ticketsRef =
-                this.db.collection("modmail_tickets");
-
-            const existing = await ticketsRef
-                .where("userId", "==", userId)
-                .where("status", "==", "open")
-                .limit(1)
-                .get();
-
-            if (!existing.empty) {
-                await interaction
-                    .update({
-                        content:
-                            "⚠️ You already have an active support ticket open.",
-                        embeds: [],
-                        components: []
-                    })
-                    .catch(() => {});
-
-                return;
-            }
 
             /*
-             * Acknowledge the button before doing Firestore/Discord work.
+             * Only send category menu when there isn't
+             * already a pending flow.
              */
-            await interaction
-                .update({
-                    content:
-                        `✅ Category selected: **${CATEGORY_NAMES[categoryKey]}**. Creating your ticket...`,
-                    embeds: [],
-                    components: []
-                })
-                .catch(() => {});
 
-            await this.createTicket(
-                interaction.user,
-                categoryKey
-            );
+            if (existingPending.exists) {
+                return;
+            }
+
+
+            const embed = new EmbedBuilder()
+                .setColor("#2B2D31")
+                .setTitle("📨 Pixel Villa Support")
+                .setDescription(
+                    "Welcome to **Pixel Villa Support**.\n\n" +
+                    "Please select the category that best matches your query."
+                )
+                .setFooter({
+                    text: "Pixel Villa Support"
+                })
+                .setTimestamp();
+
+
+            const row = new ActionRowBuilder()
+                .addComponents(
+
+                    new ButtonBuilder()
+                        .setCustomId("modmail_minecraft")
+                        .setLabel("Minecraft")
+                        .setStyle(ButtonStyle.Primary)
+                        .setEmoji("⛏️"),
+
+                    new ButtonBuilder()
+                        .setCustomId("modmail_discord")
+                        .setLabel("Discord")
+                        .setStyle(ButtonStyle.Secondary)
+                        .setEmoji("💬"),
+
+                    new ButtonBuilder()
+                        .setCustomId("modmail_others")
+                        .setLabel("Others")
+                        .setStyle(ButtonStyle.Secondary)
+                        .setEmoji("📩")
+                );
+
+
+            await message.author.send({
+                embeds: [embed],
+                components: [row]
+            });
+
         } catch (error) {
+
             console.error(
-                "[ModMail] Button handling error:",
+                "[ModMail] Failed to start ticket flow:",
                 error
             );
 
-            if (!interaction.replied && !interaction.deferred) {
-                await interaction
-                    .reply({
-                        content:
-                            "❌ Something went wrong while creating your ticket.",
-                        ephemeral: true
-                    })
-                    .catch(() => {});
-            }
-        } finally {
-            this.ticketCreationLocks.delete(userId);
         }
     }
 
-        /**
-     * Create a ticket channel and Firestore ticket.
-     */
-    async createTicket(user, categoryKey) {
-        if (!this.db || !this.client) return;
+
+    /* =====================================================
+       CREATE TICKET
+       ===================================================== */
+
+    async function createTicket(user, categoryKey) {
+
+        if (!db || !client) {
+            return;
+        }
+
 
         const userId = user.id;
 
-        const guild = await this.client.guilds
+
+        const guild = await client.guilds
             .fetch(MODMAIL_CONFIG.guildId)
             .catch(() => null);
 
+
         if (!guild) {
-            await user
-                .send(
-                    "❌ I could not access the support server. Please try again later."
-                )
-                .catch(() => {});
+
+            await user.send(
+                "❌ I could not access the support server. Please try again later."
+            ).catch(() => {});
 
             return;
         }
 
-        // Validate category
-        if (!Object.prototype.hasOwnProperty.call(
-            MODMAIL_CONFIG.supportRoles,
-            categoryKey
-        )) {
-            await user
-                .send("❌ Invalid support category.")
-                .catch(() => {});
 
-            return;
-        }
+        const ticketsRef = db.collection("modmail_tickets");
 
-        const ticketsRef = this.db.collection("modmail_tickets");
 
-        // Final protection against duplicate active tickets
+        /*
+         * Final duplicate check.
+         */
+
         const existing = await ticketsRef
             .where("userId", "==", userId)
             .where("status", "==", "open")
+            .limit(1)
             .get();
 
+
         if (!existing.empty) {
-            await user
-                .send("⚠️ You already have an active support ticket.")
-                .catch(() => {});
+
+            await user.send(
+                "⚠️ You already have an active support ticket."
+            ).catch(() => {});
 
             return;
         }
 
-        /*
-         * Generate ticket number atomically.
-         * This prevents two users from receiving the same number.
-         */
-        const counterRef = this.db
+
+        /* =================================================
+           TICKET NUMBER
+           ================================================= */
+
+        const counterRef = db
             .collection("modmail")
             .doc("config");
 
         let ticketNumber;
 
-        try {
-            ticketNumber = await this.db.runTransaction(
-                async (transaction) => {
-                    const counterDoc = await transaction.get(counterRef);
 
-                    let currentNumber = 0;
+        try {
+
+            ticketNumber = await db.runTransaction(
+                async transaction => {
+
+                    const counterDoc =
+                        await transaction.get(counterRef);
+
+                    let current = 0;
 
                     if (counterDoc.exists) {
-                        currentNumber =
-                            Number(counterDoc.data().ticketCounter) || 0;
+
+                        const data = counterDoc.data();
+
+                        current =
+                            Number(data.ticketCounter) || 0;
                     }
 
-                    const nextNumber = currentNumber + 1;
+
+                    const next = current + 1;
+
 
                     transaction.set(
                         counterRef,
                         {
-                            ticketCounter: nextNumber,
-                            updatedAt: new Date().toISOString()
+                            ticketCounter: next
                         },
-                        { merge: true }
+                        {
+                            merge: true
+                        }
                     );
 
-                    return nextNumber;
+
+                    return next;
                 }
             );
+
         } catch (error) {
+
             console.error(
-                "[ModMail] Failed to generate ticket number:",
+                "[ModMail] Ticket counter failed:",
                 error
             );
 
-            await user
-                .send(
-                    "❌ Failed to generate your ticket number. Please try again later."
-                )
-                .catch(() => {});
+            await user.send(
+                "❌ Failed to create your support ticket. Please try again later."
+            ).catch(() => {});
 
             return;
         }
 
-        const paddedNumber = String(ticketNumber).padStart(4, "0");
-        const channelName = `${categoryKey}-${paddedNumber}`;
+
+        const paddedNumber =
+            String(ticketNumber).padStart(4, "0");
+
+
+        const channelName =
+            `${categoryKey}-${paddedNumber}`;
+
 
         const supportRoleId =
             MODMAIL_CONFIG.supportRoles[categoryKey];
 
-        /*
-         * Ticket channel permissions:
-         *
-         * @everyone -> cannot see
-         * Bot        -> full ticket access
-         * Support    -> access according to category
-         */
+
+        if (!supportRoleId) {
+
+            console.error(
+                "[ModMail] Invalid support role for:",
+                categoryKey
+            );
+
+            return;
+        }
+
+
+        /* =================================================
+           PERMISSIONS
+           ================================================= */
+
         const permissionOverwrites = [
+
             {
                 id: guild.id,
+
                 deny: [
                     PermissionFlagsBits.ViewChannel
                 ]
             },
+
             {
-                id: this.client.user.id,
+                id: client.user.id,
+
                 allow: [
                     PermissionFlagsBits.ViewChannel,
                     PermissionFlagsBits.SendMessages,
                     PermissionFlagsBits.ReadMessageHistory,
                     PermissionFlagsBits.ManageChannels,
-                    PermissionFlagsBits.ManageMessages
+                    PermissionFlagsBits.ManageMessages,
+                    PermissionFlagsBits.EmbedLinks,
+                    PermissionFlagsBits.AttachFiles
                 ]
             },
+
             {
                 id: supportRoleId,
+
                 allow: [
                     PermissionFlagsBits.ViewChannel,
                     PermissionFlagsBits.SendMessages,
                     PermissionFlagsBits.ReadMessageHistory,
+                    PermissionFlagsBits.EmbedLinks,
                     PermissionFlagsBits.AttachFiles
                 ]
             }
         ];
 
+
+        /* =================================================
+           CREATE CHANNEL
+           ================================================= */
+
         let ticketChannel;
 
+
         try {
+
             ticketChannel = await guild.channels.create({
+
                 name: channelName,
+
                 type: ChannelType.GuildText,
+
                 parent: MODMAIL_CONFIG.ticketCategoryId,
+
                 permissionOverwrites
+
             });
+
         } catch (error) {
+
             console.error(
                 "[ModMail] Failed to create ticket channel:",
                 error
             );
 
-            await user
-                .send(
-                    "❌ Failed to create your support ticket. Please try again later."
-                )
-                .catch(() => {});
+            await user.send(
+                "❌ Failed to create your support ticket. Please try again later."
+            ).catch(() => {});
 
             return;
         }
 
-        /*
-         * Create Firestore ticket document.
-         */
-        let ticketDoc;
+
+        /* =================================================
+           FIRESTORE TICKET
+           ================================================= */
+
+        const ticketDoc =
+            ticketsRef.doc();
+
 
         try {
-            ticketDoc = ticketsRef.doc();
 
             await ticketDoc.set({
+
                 ticketId: ticketNumber,
-                ticketNumber: paddedNumber,
+
                 channelId: ticketChannel.id,
-                guildId: guild.id,
+
                 userId,
+
                 category: categoryKey,
+
                 status: "open",
 
-                createdAt: new Date().toISOString(),
+                createdAt:
+                    new Date().toISOString(),
 
                 closedAt: null,
+
                 closedBy: null,
 
-                claimedBy: null,
-                claimedAt: null
+                claimedBy: null
+
             });
+
         } catch (error) {
+
             console.error(
-                "[ModMail] Failed to save ticket to Firestore:",
+                "[ModMail] Failed to save ticket:",
                 error
             );
 
-            // Firestore failed, so remove the orphan channel.
-            await ticketChannel
-                .delete()
+            await ticketChannel.delete()
                 .catch(() => {});
 
-            await user
-                .send(
-                    "❌ Failed to save your support ticket. Please try again later."
-                )
-                .catch(() => {});
+            await user.send(
+                "❌ Failed to save your support ticket. Please try again later."
+            ).catch(() => {});
 
             return;
         }
 
-        /*
-         * Ticket opening embed.
-         */
+
+        /* =================================================
+           TICKET EMBED
+           ================================================= */
+
         const ticketEmbed = new EmbedBuilder()
-            .setColor("#00AE86")
+
+            .setColor("#5865F2")
+
             .setTitle("📨 Pixel Villa Support")
+
             .setDescription(
-                "A new support ticket has been opened."
+                "A new support ticket has been created."
             )
+
             .addFields(
+
                 {
-                    name: "User",
+                    name: "👤 User",
                     value: `<@${userId}>`,
                     inline: true
                 },
+
                 {
-                    name: "User ID",
+                    name: "🆔 User ID",
                     value: userId,
                     inline: true
                 },
+
                 {
-                    name: "Category",
-                    value:
-                        CATEGORY_NAMES[categoryKey] ||
-                        categoryKey,
+                    name: "📂 Category",
+                    value: CATEGORY_NAMES[categoryKey],
                     inline: true
                 },
+
                 {
-                    name: "Ticket",
+                    name: "🎫 Ticket",
                     value: `#${paddedNumber}`,
                     inline: true
                 },
+
                 {
-                    name: "Status",
+                    name: "📊 Status",
                     value: "🟢 Open",
                     inline: true
                 }
             )
-            .setFooter({
-                text: "Pixel Villa Support"
-            })
+
             .setTimestamp();
 
-        try {
-            await ticketChannel.send({
-                content: `<@&${supportRoleId}>`,
-                embeds: [ticketEmbed]
-            });
-        } catch (error) {
-            console.error(
-                "[ModMail] Failed to send ticket embed:",
-                error
-            );
-        }
 
-        /*
-         * Forward messages that the user sent before
-         * selecting the category.
-         */
-        try {
-            const pendingRef = this.db
-                .collection("modmail_pending")
-                .doc(userId);
+        await ticketChannel.send({
+            embeds: [ticketEmbed]
+        }).catch(() => {});
 
-            const pendingDoc = await pendingRef.get();
+
+        /* =================================================
+           SEND PENDING MESSAGES
+           ================================================= */
+
+        const pendingRef = db
+            .collection("modmail_pending")
+            .doc(userId);
+
+
+        try {
+
+            const pendingDoc =
+                await pendingRef.get();
+
 
             if (pendingDoc.exists) {
-                const pendingData = pendingDoc.data();
 
-                const messages = Array.isArray(
-                    pendingData.messages
-                )
-                    ? pendingData.messages
-                    : [];
+                const data =
+                    pendingDoc.data();
 
-                for (const pendingMessage of messages) {
-                    const files = Array.isArray(
-                        pendingMessage.files
-                    )
-                        ? pendingMessage.files
+                const messages =
+                    Array.isArray(data.messages)
+                        ? data.messages
                         : [];
 
+
+                for (const msg of messages) {
+
                     let content =
-                        pendingMessage.content || "";
+                        msg.content || "";
 
-                    if (!content && files.length > 0) {
-                        content = "*[Attachment(s)]*";
+
+                    if (
+                        !content &&
+                        Array.isArray(msg.files) &&
+                        msg.files.length
+                    ) {
+
+                        content =
+                            "*[Attachment(s)]*";
                     }
 
-                    if (!content && files.length === 0) {
-                        continue;
-                    }
 
-                    await ticketChannel
-                        .send({
-                            content:
-                                `👤 **${user.tag}**\n${content}`,
-                            files
-                        })
-                        .catch((error) => {
-                            console.error(
-                                "[ModMail] Failed to forward pending message:",
-                                error
-                            );
-                        });
+                    await ticketChannel.send({
+
+                        content:
+                            `👤 **${user.tag}**\n${content || "*[No content]*"}`,
+
+                        files:
+                            Array.isArray(msg.files)
+                                ? msg.files
+                                : []
+
+                    }).catch(() => {});
                 }
 
-                await pendingRef.delete().catch(() => {});
+
+                await pendingRef.delete()
+                    .catch(() => {});
             }
+
         } catch (error) {
+
             console.error(
                 "[ModMail] Failed to process pending messages:",
                 error
             );
         }
 
-        /*
-         * Log ticket creation.
-         */
-        await this.sendLog(guild, {
-            title: "🎫 Ticket Created",
-            color: "#00FF00",
-            fields: [
+
+        /* =================================================
+           LOG
+           ================================================= */
+
+        await sendLog(
+
+            guild,
+
+            "🎫 Ticket Created",
+
+            "#57F287",
+
+            [
+
                 {
-                    name: "Ticket Number",
+                    name: "Ticket",
                     value: `#${paddedNumber}`,
                     inline: true
                 },
+
                 {
                     name: "Category",
-                    value:
-                        CATEGORY_NAMES[categoryKey] ||
-                        categoryKey,
+                    value: CATEGORY_NAMES[categoryKey],
                     inline: true
                 },
+
                 {
                     name: "User",
                     value: `<@${userId}> (${userId})`,
                     inline: false
                 },
+
                 {
                     name: "Channel",
                     value: `<#${ticketChannel.id}>`,
                     inline: true
                 }
             ]
-        });
-
-        /*
-         * Tell the user their ticket is ready.
-         */
-        await user
-            .send(
-                `✅ Your support ticket **#${paddedNumber}** has been created!\n\n` +
-                `📂 Category: **${CATEGORY_NAMES[categoryKey] || categoryKey}**\n` +
-                `Staff will respond to you shortly.`
-            )
-            .catch(() => {});
-
-        console.log(
-            `[ModMail] Ticket #${paddedNumber} created for ${user.tag} (${userId})`
         );
+        /* =================================================
+           CONFIRMATION DM
+           ================================================= */
+
+        await user.send({
+            embeds: [
+                new EmbedBuilder()
+                    .setColor("#57F287")
+                    .setTitle("✅ Support Ticket Created")
+                    .setDescription(
+                        `Your support ticket has been successfully created.\n\n` +
+                        `🎫 **Ticket:** #${paddedNum}\n` +
+                        `📂 **Category:** ${CATEGORY_NAMES[categoryKey]}\n\n` +
+                        `Staff will respond to you shortly.`
+                    )
+                    .setFooter({
+                        text: "Pixel Villa Support"
+                    })
+                    .setTimestamp()
+            ]
+        }).catch(() => {});
+
     }
 
     /**
-     * Close an active ticket.
+     * Close a ticket.
      */
     async closeTicket(message, ticketDoc, ticketData) {
-        if (!this.db || !this.client) return;
+        const ticketIdKey = ticketDoc.id;
 
-        const ticketDocumentId = ticketDoc.id;
+        if (this.closingLocks.has(ticketIdKey)) return;
 
-        // Prevent multiple .close commands at the same time.
-        if (this.closingLocks.has(ticketDocumentId)) {
-            return;
-        }
-
-        this.closingLocks.add(ticketDocumentId);
+        this.closingLocks.add(ticketIdKey);
 
         try {
-            // Re-read the ticket to make sure it is still open.
             const freshDoc = await ticketDoc.ref.get();
 
-            if (!freshDoc.exists) {
-                return;
-            }
+            if (!freshDoc.exists) return;
 
             const freshData = freshDoc.data();
 
@@ -1109,18 +857,12 @@ class ModMailSystem {
 
             const guild = message.guild;
 
-            if (!guild) {
-                return;
-            }
-
             const member = await guild.members
                 .fetch(message.author.id)
                 .catch(() => null);
 
             const requiredRole =
-                MODMAIL_CONFIG.supportRoles[
-                    freshData.category
-                ];
+                MODMAIL_CONFIG.supportRoles[ticketData.category];
 
             if (
                 !member ||
@@ -1136,76 +878,68 @@ class ModMailSystem {
                 return;
             }
 
-            /*
-             * Mark the ticket closed BEFORE deleting the channel.
-             * This prevents channelDelete from treating it as
-             * a manually deleted active ticket.
-             */
+            const closedAt = new Date().toISOString();
+
             await ticketDoc.ref.update({
                 status: "closed",
-                closedAt: new Date().toISOString(),
+                closedAt,
                 closedBy: message.author.id
             });
 
-            /*
-             * Notify the user.
-             */
+            /* =================================================
+               USER CLOSE DM
+               ================================================= */
+
             const user = await this.client.users
-                .fetch(freshData.userId)
+                .fetch(ticketData.userId)
                 .catch(() => null);
 
             if (user) {
-                const closeEmbed = new EmbedBuilder()
-                    .setColor("#ED4245")
-                    .setTitle("🔒 Pixel Villa Support")
-                    .setDescription(
-                        "Your support ticket has been closed.\n\n" +
-                        "If you need help again, simply send a new DM to Pixel Villa Support."
-                    )
-                    .addFields({
-                        name: "Ticket",
-                        value:
-                            `#${String(
-                                freshData.ticketId
-                            ).padStart(4, "0")}`,
-                        inline: true
-                    })
-                    .setTimestamp();
-
-                await user
-                    .send({
-                        embeds: [closeEmbed]
-                    })
-                    .catch(() => {});
+                await user.send({
+                    embeds: [
+                        new EmbedBuilder()
+                            .setColor("#ED4245")
+                            .setTitle("🔒 Support Ticket Closed")
+                            .setDescription(
+                                `Your support ticket **#${String(
+                                    ticketData.ticketId
+                                ).padStart(4, "0")}** has been closed.\n\n` +
+                                `If you need help again, simply send me a new DM.`
+                            )
+                            .setFooter({
+                                text: "Pixel Villa Support"
+                            })
+                            .setTimestamp()
+                    ]
+                }).catch(() => {});
             }
 
-            /*
-             * Log closure.
-             */
+            /* =================================================
+               CLOSE LOG
+               ================================================= */
+
             await this.sendLog(guild, {
                 title: "🔒 Ticket Closed",
                 color: "#ED4245",
                 fields: [
                     {
-                        name: "Ticket Number",
-                        value:
-                            `#${String(
-                                freshData.ticketId
-                            ).padStart(4, "0")}`,
+                        name: "Ticket",
+                        value: `#${String(ticketData.ticketId).padStart(
+                            4,
+                            "0"
+                        )}`,
                         inline: true
                     },
                     {
                         name: "Category",
                         value:
-                            CATEGORY_NAMES[
-                                freshData.category
-                            ] ||
-                            freshData.category,
+                            CATEGORY_NAMES[ticketData.category] ||
+                            ticketData.category,
                         inline: true
                     },
                     {
-                        name: "User ID",
-                        value: freshData.userId,
+                        name: "User",
+                        value: `<@${ticketData.userId}>`,
                         inline: true
                     },
                     {
@@ -1216,52 +950,33 @@ class ModMailSystem {
                 ]
             });
 
-            await message.channel
-                .send(
-                    "🔒 Ticket closed. This channel will be deleted in 3 seconds."
-                )
+            /* =================================================
+               DELETE CHANNEL
+               ================================================= */
+
+            await message
+                .channel
+                .send("🔒 Ticket closed. Deleting this channel in 3 seconds...")
                 .catch(() => {});
 
             setTimeout(async () => {
-                try {
-                    if (message.channel) {
-                        await message.channel.delete(
-                            "ModMail ticket closed"
-                        );
-                    }
-                } catch (error) {
-                    console.error(
-                        "[ModMail] Failed to delete closed ticket channel:",
-                        error
-                    );
-                }
+                await message.channel.delete().catch(() => {});
             }, 3000);
+
         } catch (error) {
-            console.error(
-                "[ModMail] Error while closing ticket:",
-                error
-            );
+            console.error("[ModMail] Error closing ticket:", error);
         } finally {
-            // Keep the lock briefly so duplicate .close commands
-            // cannot run while Discord is deleting the channel.
-            setTimeout(() => {
-                this.closingLocks.delete(ticketDocumentId);
-            }, 5000);
+            this.closingLocks.delete(ticketIdKey);
         }
     }
 
     /**
-     * Handle manual ticket channel deletion.
+     * Handle manually deleted ticket channels.
      */
     async handleChannelDelete(channel) {
         if (!this.db) return;
 
-        if (
-            channel.type !== ChannelType.GuildText ||
-            channel.guild?.id !== MODMAIL_CONFIG.guildId
-        ) {
-            return;
-        }
+        if (channel.type !== ChannelType.GuildText) return;
 
         try {
             const ticketsRef =
@@ -1272,37 +987,28 @@ class ModMailSystem {
                 .where("status", "==", "open")
                 .get();
 
-            if (snapshot.empty) {
-                return;
-            }
+            if (snapshot.empty) return;
 
             for (const doc of snapshot.docs) {
-                await doc.ref
-                    .update({
-                        status: "closed",
-                        closedAt: new Date().toISOString(),
-                        closedBy: "manual_channel_delete"
-                    })
-                    .catch(() => {});
+                await doc.ref.update({
+                    status: "closed",
+                    closedAt: new Date().toISOString(),
+                    closedBy: "manual_channel_delete"
+                }).catch(() => {});
             }
 
-            console.log(
-                `[ModMail] Ticket channel ${channel.id} was manually deleted.`
-            );
         } catch (error) {
             console.error(
-                "[ModMail] Error handling deleted ticket channel:",
+                "[ModMail] Error handling deleted channel:",
                 error
             );
         }
     }
 
     /**
-     * Send a ModMail log to the configured log channel.
+     * Send ModMail logs.
      */
     async sendLog(guild, embedData) {
-        if (!guild) return;
-
         try {
             const logsChannel = await guild.channels
                 .fetch(MODMAIL_CONFIG.logsChannelId)
@@ -1310,29 +1016,20 @@ class ModMailSystem {
 
             if (!logsChannel) {
                 console.error(
-                    "[ModMail] Logs channel was not found."
-                );
-                return;
-            }
-
-            if (
-                !logsChannel.isTextBased ||
-                !logsChannel.isTextBased()
-            ) {
-                console.error(
-                    "[ModMail] Logs channel is not text based."
+                    "[ModMail] Logs channel not found:",
+                    MODMAIL_CONFIG.logsChannelId
                 );
                 return;
             }
 
             const embed = new EmbedBuilder()
-                .setColor(
-                    embedData.color || "#5865F2"
-                )
-                .setTitle(
-                    embedData.title || "ModMail Log"
-                )
+                .setColor(embedData.color || "#5865F2")
+                .setTitle(embedData.title || "ModMail Log")
                 .setTimestamp();
+
+            if (embedData.description) {
+                embed.setDescription(embedData.description);
+            }
 
             if (
                 Array.isArray(embedData.fields) &&
@@ -1341,40 +1038,40 @@ class ModMailSystem {
                 embed.addFields(embedData.fields);
             }
 
-            if (embedData.description) {
-                embed.setDescription(
-                    embedData.description
-                );
-            }
+            await logsChannel.send({
+                embeds: [embed]
+            });
 
-            await logsChannel
-                .send({
-                    embeds: [embed]
-                })
-                .catch((error) => {
-                    console.error(
-                        "[ModMail] Failed to send log:",
-                        error
-                    );
-                });
         } catch (error) {
-            console.error(
-                "[ModMail] Logging failed:",
-                error
-            );
+            console.error("[ModMail] Logging failed:", error);
         }
     }
 }
 
-/*
- * Create ONE ModMail instance.
- *
- * `require("./help")` returns this instance, while the
- * constructor automatically hooks the Discord client.
- */
+/* =========================================================
+   MODMAIL INSTANCE
+   ========================================================= */
+
 const modmail = new ModMailSystem();
 
+/* =========================================================
+   IMPORTANT:
+   index.js uses:
+
+   require("./help")(client);
+
+   Therefore help.js MUST export a FUNCTION.
+   ========================================================= */
+
 module.exports = function (client) {
+    if (!client) {
+        console.error(
+            "[ModMail] Client was not provided."
+        );
+        return;
+    }
+
     modmail.attach(client);
-    return modmail;
 };
+
+        
