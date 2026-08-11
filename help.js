@@ -6,7 +6,7 @@ const {
     ButtonStyle,
     PermissionFlagsBits
 } = require("discord.js");
-const db = require("./firebase");
+const { db } = require("./firebase");
 
 const GUILD_ID = "1510176142286389329";
 const TICKET_CATEGORY_ID = "1521077017569656946";
