@@ -65,6 +65,71 @@ module.exports = function(client) {
         }
     });
 
+    // 2. Snipe Command Listener with Manage Messages Filter and Screenshot-matched Embed
+    client.on("messageCreate", async (message) => {
+        try {
+            if (!message.guild || message.author.bot) return;
+
+            // Check if message starts with snippet command (e.g., x!snipe)
+            const args = message.content.trim().split(/ +/);
+            const command = args.shift().toLowerCase();
+
+            if (command === "x!snipe") {
+                // Filter: Check if user has Manage Messages permission (or Administrator)
+                if (!message.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
+                    return message.reply({ content: "❌ You do not have permission to use this command (Requires **Manage Messages**).", ephemeral: true }).catch(() => {});
+                }
+
+                const channelId = message.channel.id;
+                const channelSnipes = deletedMessages.get(channelId);
+
+                if (!channelSnipes || channelSnipes.length === 0) {
+                    return message.reply("There are no recently deleted messages to snipe in this channel.").catch(() => {});
+                }
+
+                let index = 0;
+                if (args[0] && !isNaN(args[0])) {
+                    const parsedIndex = parseInt(args[0]) - 1;
+                    if (parsedIndex >= 0 && parsedIndex < channelSnipes.length) {
+                        index = parsedIndex;
+                    }
+                }
+
+                const sniped = channelSnipes[index];
+                const total = channelSnipes.length;
+
+                // Format timestamp similarly to Discord style shown in screenshot
+                const timeString = new Date(sniped.time).toLocaleString("en-US", {
+                    weekday: "long",
+                    year: "numeric",
+                    month: "long",
+                    day: "numeric",
+                    hour: "numeric",
+                    minute: "2-digit",
+                    hour12: true
+                });
+
+                const embed = new EmbedBuilder()
+                    .setTitle("Sniped Message")
+                    .addFields(
+                        { name: "Content:", value: sniped.content, inline: false },
+                        { name: "Author", value: sniped.author.username, inline: false },
+                        { name: "Timestamp", value: timeString, inline: false }
+                    )
+                    .setFooter({ text: `Channel: #${message.channel.name} | Snipe #${index + 1}/${total}` });
+
+                if (sniped.image) {
+                    embed.setImage(sniped.image);
+                }
+
+                await message.reply({ embeds: [embed] }).catch(() => {});
+            }
+        } catch (error) {
+            console.error("Error in snipe command handler:", error);
+        }
+    });
+};
+
     // 2. Command Handler (.setup..., role, snipe)
     client.on('messageCreate', async message => {
         try {
