@@ -6,7 +6,7 @@ const {
     ButtonStyle,
     PermissionFlagsBits
 } = require("discord.js");
-const { db } = require("./firebase");
+const db = require("./firebase");
 
 const GUILD_ID = "1510176142286389329";
 const TICKET_CATEGORY_ID = "1521077017569656946";
@@ -179,6 +179,7 @@ module.exports = function setupModMail(client) {
 
                 const formattedId = padTicketId(ticketIdNum);
                 const channelName = `${categoryKey}-${formattedId}`;
+                const supportRoleId = SUPPORT_ROLES[categoryKey];
 
                 let ticketChannel;
                 try {
@@ -190,16 +191,6 @@ module.exports = function setupModMail(client) {
                             {
                                 id: guild.id,
                                 deny: [PermissionFlagsBits.ViewChannel]
-                            },
-                            {
-                                id: userId,
-                                allow: [
-                                    PermissionFlagsBits.ViewChannel,
-                                    PermissionFlagsBits.SendMessages,
-                                    PermissionFlagsBits.ReadMessageHistory,
-                                    PermissionFlagsBits.EmbedLinks,
-                                    PermissionFlagsBits.AttachFiles
-                                ]
                             },
                             {
                                 id: client.user.id,
@@ -214,7 +205,7 @@ module.exports = function setupModMail(client) {
                                 ]
                             },
                             {
-                                id: SUPPORT_ROLES[categoryKey] || guild.id,
+                                id: supportRoleId || guild.id,
                                 allow: [
                                     PermissionFlagsBits.ViewChannel,
                                     PermissionFlagsBits.SendMessages,
@@ -262,11 +253,11 @@ module.exports = function setupModMail(client) {
                     .setColor(0x2ECC71)
                     .setTitle("📨 Pixel Villa Support")
                     .addFields(
-                        { name: "👤 User", value: `<@${userId}>`, inline: true },
-                        { name: "🆔 User ID", value: userId, inline: true },
-                        { name: "📂 Category", value: CATEGORY_NAMES[categoryKey] || categoryKey, inline: true },
-                        { name: "🎫 Ticket", value: `#${formattedId}`, inline: true },
-                        { name: "📊 Status", value: "🟢 Open", inline: true }
+                        { name: "User", value: `<@${userId}>`, inline: true },
+                        { name: "User ID", value: userId, inline: true },
+                        { name: "Category", value: CATEGORY_NAMES[categoryKey] || categoryKey, inline: true },
+                        { name: "Ticket", value: `#${formattedId}`, inline: true },
+                        { name: "Status", value: "🟢 Open", inline: true }
                     )
                     .setTimestamp();
 
@@ -275,7 +266,8 @@ module.exports = function setupModMail(client) {
                     new ButtonBuilder().setCustomId("modmail_claim").setLabel("Claim Ticket").setStyle(ButtonStyle.Primary).setEmoji("🙋")
                 );
 
-                await ticketChannel.send({ embeds: [ticketEmbed], components: [actionRow] }).catch(() => {});
+                const rolePing = supportRoleId ? `<@&${supportRoleId}>` : "";
+                await ticketChannel.send({ content: rolePing, embeds: [ticketEmbed], components: [actionRow] }).catch(() => {});
 
                 const confirmEmbed = new EmbedBuilder()
                     .setColor(0x2ECC71)
