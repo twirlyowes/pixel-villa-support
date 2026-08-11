@@ -182,70 +182,8 @@ module.exports = function(client) {
     });
 
 
-    // 2. Snipe Command Listener with Manage Messages Filter and Screenshot-matched Embed
-    client.on("messageCreate", async (message) => {
-        try {
-            if (!message.guild || message.author.bot) return;
-
-            // Check if message starts with snippet command (e.g., x!snipe)
-            const args = message.content.trim().split(/ +/);
-            const command = args.shift().toLowerCase();
-
-            if (command === "x!snipe") {
-                // Filter: Check if user has Manage Messages permission (or Administrator)
-                if (!message.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
-                    return message.reply({ content: "❌ You do not have permission to use this command (Requires **Manage Messages**).", ephemeral: true }).catch(() => {});
-                }
-
-                const channelId = message.channel.id;
-                const channelSnipes = deletedMessages.get(channelId);
-
-                if (!channelSnipes || channelSnipes.length === 0) {
-                    return message.reply("There are no recently deleted messages to snipe in this channel.").catch(() => {});
-                }
-
-                let index = 0;
-                if (args[0] && !isNaN(args[0])) {
-                    const parsedIndex = parseInt(args[0]) - 1;
-                    if (parsedIndex >= 0 && parsedIndex < channelSnipes.length) {
-                        index = parsedIndex;
-                    }
-                }
-
-                const sniped = channelSnipes[index];
-                const total = channelSnipes.length;
-
-                // Format timestamp similarly to Discord style shown in screenshot
-                const timeString = new Date(sniped.time).toLocaleString("en-US", {
-                    weekday: "long",
-                    year: "numeric",
-                    month: "long",
-                    day: "numeric",
-                    hour: "numeric",
-                    minute: "2-digit",
-                    hour12: true
-                });
-
-                const embed = new EmbedBuilder()
-                    .setTitle("Sniped Message")
-                    .addFields(
-                        { name: "Content:", value: sniped.content, inline: false },
-                        { name: "Author", value: sniped.author.username, inline: false },
-                        { name: "Timestamp", value: timeString, inline: false }
-                    )
-                    .setFooter({ text: `Channel: #${message.channel.name} | Snipe #${index + 1}/${total}` });
-
-                if (sniped.image) {
-                    embed.setImage(sniped.image);
-                }
-
-                await message.reply({ embeds: [embed] }).catch(() => {});
-            }
-        } catch (error) {
-            console.error("Error in snipe command handler:", error);
-        }
-    });
-
+    
+    
 
     // 2. Command Handler (.setup..., role, snipe)
     client.on('messageCreate', async message => {
@@ -357,56 +295,7 @@ module.exports = function(client) {
                 }
             }
 
-            // ==================== SNIPE COMMAND ====================
-            if (command === "snipe") {
-                const channelId = message.channel.id;
-                const channelSnipes = deletedMessages.get(channelId);
-
-                if (!channelSnipes || channelSnipes.length === 0) {
-                    const embed = new EmbedBuilder()
-                        .setColor(0xe74c3c)
-                        .setDescription("❌ There are no recently deleted messages recorded in this channel.");
-                    return message.reply({ embeds: [embed] });
-                }
-
-                const targetUser = message.mentions.users.first();
-                let snipeTarget;
-
-                if (targetUser) {
-                    snipeTarget = channelSnipes.find((m) => m.author.id === targetUser.id);
-                    if (!snipeTarget) {
-                        const embed = new EmbedBuilder()
-                            .setColor(0xe74c3c)
-                            .setDescription(`❌ Could not find any cached deleted messages from **${targetUser.tag}** in this channel.`);
-                        return message.reply({ embeds: [embed] });
-                    }
-                } else {
-                    snipeTarget = channelSnipes[0];
-                }
-
-                const embed = new EmbedBuilder()
-                    .setColor(0x3498db)
-                    .setAuthor({
-                        name: `${snipeTarget.author.tag} (${snipeTarget.author.id})`,
-                        iconURL: snipeTarget.author.displayAvatarURL({ dynamic: true })
-                    })
-                    .setDescription(snipeTarget.content || "[No Content Available]")
-                    .setFooter({ text: `Snipe requested by ${message.author.tag}` })
-                    .setTimestamp(snipeTarget.time);
-
-                if (snipeTarget.image) {
-                    embed.setImage(snipeTarget.image);
-                }
-
-                return message.reply({ embeds: [embed] });
-            }
-
-        } catch (error) {
-            console.error("Command Execution Error:", error);
-            return message.reply("❌ An error occurred while attempting to process that command.").catch(() => {});
-        }
-    });
-
+            
     // 3. Interaction Handler (Verify Button & Captcha Modal Submissions)
     client.on('interactionCreate', async interaction => {
         try {
