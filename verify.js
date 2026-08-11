@@ -23,6 +23,7 @@ const LOG_CHANNEL_ID = '1510632065622741029';     // Updated log channel ID
 const VERIFIED_ROLE_ID = '1530811817432055898';   // Optional: Leave empty to find by name 'Verified' or set ID
 const UNVERIFIED_ROLE_ID = '1530811687169556520'; // Optional: Leave empty to find by name 'Unverified' or set ID
 
+
 // ==================== IN-MEMORY STORAGE ====================
 const pendingCaptchas = new Map(); // userId -> { answer, attempts, timeoutId }
 const cooldowns = new Map();       // userId -> timestamp expiration
@@ -64,6 +65,122 @@ module.exports = function(client) {
             console.error("Error handling message deletion cache:", error);
         }
     });
+
+    // 2. Snipe Command Listener with Manage Messages Filter and Navigation Buttons
+    client.on("messageCreate", async (message) => {
+        try {
+            if (!message.guild || message.author.bot) return;
+
+            const args = message.content.trim().split(/ +/);
+            const command = args.shift().toLowerCase();
+
+            if (command === "x!snipe") {
+                if (!message.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
+                    return message.reply({ content: "❌ You do not have permission to use this command (Requires **Manage Messages**).", ephemeral: true }).catch(() => {});
+                }
+
+                const channelId = message.channel.id;
+                const channelSnipes = deletedMessages.get(channelId);
+
+                if (!channelSnipes || channelSnipes.length === 0) {
+                    return message.reply("There are no recently deleted messages to snipe in this channel.").catch(() => {});
+                }
+
+                let currentIndex = 0;
+                if (args[0] && !isNaN(args[0])) {
+                    const parsedIndex = parseInt(args[0]) - 1;
+                    if (parsedIndex >= 0 && parsedIndex < channelSnipes.length) {
+                        currentIndex = parsedIndex;
+                    }
+                }
+
+                const generateSnipeMessage = (index) => {
+                    const sniped = channelSnipes[index];
+                    const total = channelSnipes.length;
+
+                    const timeString = new Date(sniped.time).toLocaleString("en-US", {
+                        weekday: "long",
+                        year: "numeric",
+                        month: "long",
+                        day: "numeric",
+                        hour: "numeric",
+                        minute: "2-digit",
+                        hour12: true
+                    });
+
+                    const embed = new EmbedBuilder()
+                        .setTitle("Sniped Message")
+                        .addFields(
+                            { name: "Content:", value: sniped.content, inline: false },
+                            { name: "Author", value: sniped.author.username, inline: false },
+                            { name: "Timestamp", value: timeString, inline: false }
+                        )
+                        .setFooter({ text: `Channel: #${message.channel.name} | Snipe #${index + 1}/${total}` });
+
+                    if (sniped.image) {
+                        embed.setImage(sniped.image);
+                    }
+
+                    const row = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder().setCustomId("snipe_first").setEmoji("⏮️").setStyle(ButtonStyle.Secondary).setDisabled(index === 0),
+                        new ButtonBuilder().setCustomId("snipe_prev").setEmoji("◀️").setStyle(ButtonStyle.Secondary).setDisabled(index === 0),
+                        new ButtonBuilder().setCustomId("snipe_stop").setEmoji("⏹️").setStyle(ButtonStyle.Danger),
+                        new ButtonBuilder().setCustomId("snipe_next").setEmoji("▶️").setStyle(ButtonStyle.Secondary).setDisabled(index === total - 1),
+                        new ButtonBuilder().setCustomId("snipe_last").setEmoji("⏭️").setStyle(ButtonStyle.Secondary).setDisabled(index === total - 1)
+                    );
+
+                    return { embeds: [embed], components: [row] };
+                };
+
+                const sentMessage = await message.reply(generateSnipeMessage(currentIndex)).catch(() => {});
+                if (!sentMessage) return;
+
+                const collector = sentMessage.createMessageComponentCollector({ time: 60000 });
+
+                collector.on("collect", async (interaction) => {
+                    try {
+                        if (interaction.user.id !== message.author.id) {
+                            return interaction.reply({ content: "You cannot use these buttons.", ephemeral: true }).catch(() => {});
+                        }
+
+                        if (interaction.customId === "snipe_first") {
+                            currentIndex = 0;
+                        } else if (interaction.customId === "snipe_prev") {
+                            if (currentIndex > 0) currentIndex--;
+                        } else if (interaction.customId === "snipe_next") {
+                            if (currentIndex < channelSnipes.length - 1) currentIndex++;
+                        } else if (interaction.customId === "snipe_last") {
+                            currentIndex = channelSnipes.length - 1;
+                        } else if (interaction.customId === "snipe_stop") {
+                            collector.stop();
+                            await interaction.update({ components: [] }).catch(() => {});
+                            return;
+                        }
+
+                        await interaction.update(generateSnipeMessage(currentIndex)).catch(() => {});
+                    } catch (err) {
+                        console.error("Error handling snipe interaction:", err);
+                    }
+                });
+
+                collector.on("end", async () => {
+                    try {
+                        const disabledRow = new ActionRowBuilder().addComponents(
+                            new ButtonBuilder().setCustomId("snipe_first").setEmoji("⏮️").setStyle(ButtonStyle.Secondary).setDisabled(true),
+                            new ButtonBuilder().setCustomId("snipe_prev").setEmoji("◀️").setStyle(ButtonStyle.Secondary).setDisabled(true),
+                            new ButtonBuilder().setCustomId("snipe_stop").setEmoji("⏹️").setStyle(ButtonStyle.Danger).setDisabled(true),
+                            new ButtonBuilder().setCustomId("snipe_next").setEmoji("▶️").setStyle(ButtonStyle.Secondary).setDisabled(true),
+                            new ButtonBuilder().setCustomId("snipe_last").setEmoji("⏭️").setStyle(ButtonStyle.Secondary).setDisabled(true)
+                        );
+                        await sentMessage.edit({ components: [disabledRow] }).catch(() => {});
+                    } catch {}
+                });
+            }
+        } catch (error) {
+            console.error("Error in snipe command handler:", error);
+        }
+    });
+
 
     // 2. Snipe Command Listener with Manage Messages Filter and Screenshot-matched Embed
     client.on("messageCreate", async (message) => {
