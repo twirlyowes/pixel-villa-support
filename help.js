@@ -126,9 +126,13 @@ module.exports = function setupModMail(client) {
                 const ticketUser = await client.users.fetch(ticketData.userId).catch(() => null);
                 if (!ticketUser) return;
 
+                const hideStaff = ticketData.hideStaffName === true;
                 const staffEmbed = new EmbedBuilder()
                     .setColor(0xE67E22)
-                    .setAuthor({ name: `🛡️ Staff (${message.author.tag})`, iconURL: message.author.displayAvatarURL() })
+                    .setAuthor({
+                        name: hideStaff ? "🛡️ Pixel Villa Support" : `🛡️ Staff (${message.author.tag})`,
+                        iconURL: hideStaff ? client.user.displayAvatarURL() : message.author.displayAvatarURL()
+                    })
                     .setDescription(message.content || "*[No Text Content]*")
                     .setTimestamp();
 
@@ -231,7 +235,8 @@ module.exports = function setupModMail(client) {
                     createdAt: now,
                     closedAt: null,
                     closedBy: null,
-                    claimedBy: null
+                    claimedBy: null,
+                    hideStaffName: false
                 });
 
                 const pendingRef = db.collection("modmail_pending").doc(userId);
@@ -263,7 +268,8 @@ module.exports = function setupModMail(client) {
 
                 const actionRow = new ActionRowBuilder().addComponents(
                     new ButtonBuilder().setCustomId("modmail_close").setLabel("Close Ticket").setStyle(ButtonStyle.Danger).setEmoji("🔒"),
-                    new ButtonBuilder().setCustomId("modmail_claim").setLabel("Claim Ticket").setStyle(ButtonStyle.Primary).setEmoji("🙋")
+                    new ButtonBuilder().setCustomId("modmail_claim").setLabel("Claim Ticket").setStyle(ButtonStyle.Primary).setEmoji("🙋"),
+                    new ButtonBuilder().setCustomId("modmail_hide_staff").setLabel("Hide Staff Name").setStyle(ButtonStyle.Secondary).setEmoji("👤")
                 );
 
                 const rolePing = supportRoleId ? `<@&${supportRoleId}>` : "";
@@ -353,6 +359,55 @@ module.exports = function setupModMail(client) {
                 return;
             }
 
+            if (customId === "modmail_hide_staff") {
+                const channelId = interaction.channel.id;
+
+                const ticketRef = db.collection("modmail_tickets").doc(channelId);
+                const ticketDoc = await ticketRef.get();
+                if (!ticketDoc.exists) return;
+
+                const ticketData = ticketDoc.data();
+                if (ticketData.status !== "open") return;
+
+                const guild = interaction.guild;
+                const member = await guild.members.fetch(interaction.user.id).catch(() => null);
+                if (!member) return;
+
+                const requiredRole = SUPPORT_ROLES[ticketData.category];
+                if (!member.permissions.has(PermissionFlagsBits.Administrator) && (!requiredRole || !member.roles.cache.has(requiredRole))) {
+                    await interaction.reply({ content: "❌ You do not have the required support role to change this setting.", ephemeral: true }).catch(() => {});
+                    return;
+                }
+
+                const currentHideState = ticketData.hideStaffName === true;
+                const newHideState = !currentHideState;
+
+                await ticketRef.update({ hideStaffName: newHideState });
+
+                const fetchedMessages = await interaction.channel.messages.fetch({ limit: 10 }).catch(() => null);
+                const targetMessage = fetchedMessages ? fetchedMessages.find(m => m.embeds.length > 0 && m.embeds[0].title === "📨 Pixel Villa Support") : null;
+
+                if (targetMessage) {
+                    const updatedRow = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder().setCustomId("modmail_close").setLabel("Close Ticket").setStyle(ButtonStyle.Danger).setEmoji("🔒"),
+                        new ButtonBuilder().setCustomId("modmail_claim").setLabel("Claim Ticket").setStyle(ButtonStyle.Primary).setEmoji("🙋"),
+                        new ButtonBuilder()
+                            .setCustomId("modmail_hide_staff")
+                            .setLabel(newHideState ? "Show Staff Name" : "Hide Staff Name")
+                            .setStyle(ButtonStyle.Secondary)
+                            .setEmoji(newHideState ? "👁️" : "👤")
+                    );
+                    await targetMessage.edit({ components: [updatedRow] }).catch(() => {});
+                }
+
+                const confirmationText = newHideState
+                    ? "👤 Staff names will now be hidden from the user."
+                    : "👁️ Staff names will now be shown to the user.";
+
+                await interaction.reply({ content: confirmationText, ephemeral: true }).catch(() => {});
+                return;
+            }
+
             if (customId === "modmail_close") {
                 await interaction.deferUpdate().catch(() => {});
                 const channelId = interaction.channel.id;
@@ -417,8 +472,4 @@ module.exports = function setupModMail(client) {
                 }, 5000);
                 return;
             }
-        } catch (error) {
-            console.error("Error in interactionCreate handler:", error);
-        }
-    });
-};
+```[cite: 1]
