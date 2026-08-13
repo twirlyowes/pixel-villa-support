@@ -118,7 +118,7 @@ client.once("ready", () => {
       url: "https://www.twitch.tv/discord",
     },
   ],
-  status: "online",
+  status: "dnd",
 });
 });
 client.on("messageCreate", async (message) => {
