@@ -1,13 +1,3 @@
-// Location: help.js
-//
-// This file combines two systems that both load through require("./help")(client):
-//   1. The `.help` command
-//   2. The ModMail / ticket support system (was previously its own file)
-//
-// Structure is section-based on purpose so more command modules can be added
-// later without needing a new require(...) line in index.js. See the
-// "ADD NEW MODULES HERE" section at the bottom for the pattern to follow.
-
 const {
     ChannelType,
     EmbedBuilder,
@@ -19,10 +9,9 @@ const {
 } = require("discord.js");
 const db = require("./firebase");
 
-// ==================== CONFIGURATION ====================
 
 const GUILD_ID = "1510176142286389329";
-const TICKET_CATEGORY_ID = "1538537441441357947";
+const TICKET_CATEGORY_ID = "1521077017569656946";
 const LOGS_CHANNEL_ID = "1510571308952326189";
 
 const SUPPORT_ROLES = {
@@ -37,7 +26,6 @@ const CATEGORY_NAMES = {
     others: "Others"
 };
 
-// ==================== SHARED HELPERS ====================
 
 async function getNextTicketId() {
     const counterRef = db.collection("modmail").doc("config");
@@ -56,9 +44,6 @@ function padTicketId(id) {
     return String(id).padStart(4, "0");
 }
 
-// Merges a permission overwrite into an existing overwrite list instead of
-// blindly overwriting it — used so ticket channels inherit the category's
-// existing overwrites rather than replacing them outright.
 function mergeOverwrite(list, id, allow = [], deny = []) {
     const idx = list.findIndex(o => o.id === id);
     if (idx !== -1) {
@@ -69,7 +54,6 @@ function mergeOverwrite(list, id, allow = [], deny = []) {
     }
 }
 
-// ==================== HELP COMMAND ====================
 
 function setupHelpCommand(client) {
     if (client.__pixelVillaHelpLoaded) return;
@@ -79,14 +63,11 @@ function setupHelpCommand(client) {
         try {
             if (message.author.bot) return;
 
-            // Safety guard: Ignore messages with no text content
             if (!message.content) return;
 
-            // Extract the first word of the message as the command
             const args = message.content.trim().split(/ +/);
             const command = args[0].toLowerCase();
 
-            // Check if the command is help
             if (command !== "help") return;
 
             const helpEmbed = new EmbedBuilder()
@@ -165,7 +146,6 @@ Use the categories below to explore all available commands.
     });
 }
 
-// ==================== MODMAIL / TICKET SYSTEM ====================
 
 function setupModMail(client) {
     if (client.__pixelVillaModMailLoaded) return;
@@ -240,15 +220,6 @@ function setupModMail(client) {
                 const ticketDoc = ticketSnapshot.docs[0];
                 const ticketData = ticketDoc.data();
 
-                const guild = message.guild;
-                const member = await guild.members.fetch(message.author.id).catch(() => null);
-                if (!member) return;
-
-                const requiredRole = SUPPORT_ROLES[ticketData.category];
-                if (!member.permissions.has(PermissionFlagsBits.Administrator) && (!requiredRole || !member.roles.cache.has(requiredRole))) {
-                    return;
-                }
-
                 const ticketUser = await client.users.fetch(ticketData.userId).catch(() => null);
                 if (!ticketUser) return;
 
@@ -311,9 +282,6 @@ function setupModMail(client) {
                 const channelName = `${categoryKey}-${formattedId}`;
                 const supportRoleId = SUPPORT_ROLES[categoryKey];
 
-                // Copy the ticket category's existing overwrites, then layer
-                // the required bot/support-role/deny-everyone permissions on
-                // top — same merge pattern voicesystem.js uses for temp VCs.
                 const ticketCategory = guild.channels.cache.get(TICKET_CATEGORY_ID)
                     || await guild.channels.fetch(TICKET_CATEGORY_ID).catch(() => null);
 
@@ -611,26 +579,10 @@ function setupModMail(client) {
     });
 }
 
-// ==================== ADD NEW MODULES HERE ====================
-//
-// To add another command/system to this file later:
-//   1. Write it as its own `function setupSomething(client) { ... }`,
-//      guarded the same way (`if (client.__pixelVillaXLoaded) return;`)
-//      so requiring this file twice never double-registers listeners.
-//   2. Call it from the exported function below.
-//
-// Example:
-// function setupWiki(client) {
-//     if (client.__pixelVillaWikiLoaded) return;
-//     client.__pixelVillaWikiLoaded = true;
-//     client.on("messageCreate", async (message) => { /* ... */ });
-// }
 
-// ==================== EXPORTS ====================
 
 module.exports = function (client) {
     setupHelpCommand(client);
     setupModMail(client);
 
-    // setupWiki(client);  // <- add future modules here
 };
