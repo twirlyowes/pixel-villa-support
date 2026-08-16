@@ -140,10 +140,14 @@ module.exports = (client) => {
   // 1. Monitor Voice State Updates (Join to Create & Auto Delete)
   client.on("voiceStateUpdate", async (oldState, newState) => {
     const member = newState.member || oldState.member;
-    if (!member || member.user.bot) return;
+    if (!member) return;
 
-    // User joined the "Join to Create" channel  
-    if (newState.channelId === CREATE_CHANNEL_ID) {  
+    // User (not a bot) joined the "Join to Create" channel.
+    // FIX: bots must NOT be excluded from this whole handler (see below) —
+    // only room *creation* should be a humans-only action. The bot-blanket
+    // check used to sit above both branches, which also skipped auto-delete
+    // for bots (see the leave-detection block below).
+    if (newState.channelId === CREATE_CHANNEL_ID && !member.user.bot) {  
       try {  
         const guild = newState.guild;  
         const displayName = member.displayName || member.user.username;  
@@ -151,7 +155,9 @@ module.exports = (client) => {
 
         let categoryOverwrites = [];  
         if (TARGET_CATEGORY_ID) {  
-          const categoryChannel = await guild.channels.fetch(TARGET_CATEGORY_ID).catch(() => null);  
+          // SPEED: check cache first, only hit the API if it's somehow not cached.
+          const categoryChannel = guild.channels.cache.get(TARGET_CATEGORY_ID)
+            || await guild.channels.fetch(TARGET_CATEGORY_ID).catch(() => null);  
           if (categoryChannel && categoryChannel.type === ChannelType.GuildCategory) {  
             categoryOverwrites = categoryChannel.permissionOverwrites.cache.map(overwrite => ({  
               id: overwrite.id,  
@@ -190,16 +196,20 @@ module.exports = (client) => {
           permissionOverwrites: categoryOverwrites,  
         });  
 
+        // Move the user in immediately — this is the step they're waiting on.
         await member.voice.setChannel(tempChannel);  
           
         activeTempChannels.set(tempChannel.id, member.id);  
         console.log(`[VoiceSystem] Created new temp channel: ${tempChannel.name} (${tempChannel.id}) for owner: ${member.user.tag}`);
 
-        await saveVoiceChannel(tempChannel.id, {
-  owner: member.id,
-  createdAt: Date.now(),
-  guildId: guild.id
-});  
+        // SPEED: Firebase persistence and the control-panel embed don't need
+        // to finish before the user is in their channel — fire them off
+        // without awaiting instead of blocking on them sequentially.
+        saveVoiceChannel(tempChannel.id, {
+          owner: member.id,
+          createdAt: Date.now(),
+          guildId: guild.id
+        }).catch(err => console.error("[VoiceSystem] Failed to persist new temp channel:", err));
 
         const controlEmbed = new EmbedBuilder()
   .setColor("#5865F2")
@@ -237,75 +247,64 @@ module.exports = (client) => {
   })
   .setTimestamp();  
 
-        await tempChannel.send({ content: `${member}`, embeds: [controlEmbed] });  
+        tempChannel.send({ content: `${member}`, embeds: [controlEmbed] })
+          .catch(err => console.error("[VoiceSystem] Failed to send control panel:", err));
 
       } catch (error) {  
         console.error("Error creating temporary voice channel:", error);  
       }  
     }  
 
-    // Check if someone left a channel (Reliable instant auto-delete)
-if (oldState.channelId && oldState.channelId !== newState.channelId) {
-  const channelId = oldState.channelId;
+    // Check if someone left a channel (instant auto-delete, no artificial delay).
+    // FIX: this block now runs for EVERY member, bots included — a music bot
+    // leaving a temp channel now correctly triggers cleanup instead of being
+    // skipped by the old function-wide "if (member.user.bot) return".
+    if (oldState.channelId && oldState.channelId !== newState.channelId) {
+      const channelId = oldState.channelId;
 
-  if (
-    channelId !== CREATE_CHANNEL_ID &&
-    !deletionTracker.has(channelId)
-  ) {
-    deletionTracker.add(channelId);
+      if (
+        channelId !== CREATE_CHANNEL_ID &&
+        !deletionTracker.has(channelId)
+      ) {
+        deletionTracker.add(channelId);
 
-    setTimeout(async () => {
-      try {
-        const leftChannel = await oldState.guild.channels.fetch(channelId).catch(() => null);
+        (async () => {
+          try {
+            // SPEED: read straight from cache instead of polling with delays.
+            // Discord.js updates the guild's voice state cache synchronously
+            // before this event fires, so the member count here is current
+            // in the overwhelming majority of cases.
+            const leftChannel = oldState.guild.channels.cache.get(channelId);
 
-        if (
-          !leftChannel ||
-          leftChannel.type !== ChannelType.GuildVoice ||
-          leftChannel.parentId !== TARGET_CATEGORY_ID
-        ) {
-          return;
-        }
+            if (
+              !leftChannel ||
+              leftChannel.type !== ChannelType.GuildVoice ||
+              leftChannel.parentId !== TARGET_CATEGORY_ID
+            ) {
+              return;
+            }
 
-        // Re-check multiple times because Discord voice cache can lag
-        let attempts = 0;
-        while (attempts < 5) {
-          const refreshedChannel = await oldState.guild.channels.fetch(channelId).catch(() => null);
+            if (leftChannel.members.size > 0) {
+              return;
+            }
 
-          if (!refreshedChannel) return;
+            await leftChannel.delete().catch(() => {});
 
-          if (refreshedChannel.members.size === 0) {
-            break;
+            activeTempChannels.delete(channelId);
+
+            await deleteVoiceChannel(channelId);
+
+            console.log(`[VoiceSystem] Deleted empty temporary channel: ${channelId}`);
+
+          } catch (err) {
+            console.error("[VoiceSystem] Auto delete error:", err);
+          } finally {
+            deletionTracker.delete(channelId);
           }
-
-          attempts++;
-
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-
-        const finalChannel = await oldState.guild.channels.fetch(channelId).catch(() => null);
-
-        if (!finalChannel || finalChannel.members.size > 0) {
-          return;
-        }
-
-        await finalChannel.delete().catch(() => {});
-
-        activeTempChannels.delete(channelId);
-
-        await deleteVoiceChannel(channelId);
-
-        console.log(`[VoiceSystem] Deleted empty temporary channel: ${channelId}`);
-
-      } catch (err) {
-        console.error("[VoiceSystem] Auto delete error:", err);
-      } finally {
-                deletionTracker.delete(channelId);
+        })();
       }
-
-        }, 500);
-  }
-} // closes oldState.channelId if
-}); // closes voiceStateUpdate
+    } // closes oldState.channelId if
+  }); // closes voiceStateUpdate
   // 2. Handle Owner Customizations & Commands with Set Lookup & Early Ignoring
   client.on("messageCreate", async (message) => {
     if (message.author.bot || !message.guild) return;
@@ -476,3 +475,4 @@ if (oldState.channelId && oldState.channelId !== newState.channelId) {
     }
   });
 };
+              
