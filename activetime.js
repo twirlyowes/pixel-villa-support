@@ -84,6 +84,36 @@ async function saveTimesToFileWithQueue() {
   }
 }
 
+// FIX (bug 2): explicitly zero out Firebase records for every staff member
+// we were tracking. Clearing the in-memory Maps and then calling
+// saveTimesToFileWithQueue() does NOT work for a reset, because that function
+// only writes users currently present in the (now-empty) daily Maps — so the
+// old totals were silently left behind in Firestore and would reappear for
+// any staff member who didn't generate new activity before the next restart.
+async function resetFirebaseRecords(userIds) {
+  if (!userIds || userIds.size === 0) return;
+
+  try {
+    const batch = db.batch();
+
+    for (const userId of userIds) {
+      const ref = db.collection("activetime").doc(userId);
+      batch.set(ref, {
+        activeTime: 0,
+        voiceTime: 0,
+        messages: 0,
+        commands: 0,
+        updatedAt: new Date()
+      }, { merge: true });
+    }
+
+    await batch.commit();
+    console.log(`✅ Reset Firebase activetime records for ${userIds.size} staff member(s).`);
+  } catch (error) {
+    console.error("❌ Firebase reset error:", error);
+  }
+}
+
 module.exports = (client) => {
   const isStaff = (member) => {
     return member && member.roles && member.roles.cache.has(STAFF_ROLE_ID);
@@ -138,8 +168,13 @@ module.exports = (client) => {
       
       const [istHours, istMinutes] = istTimeStr.split(":").map(Number);
 
-      // Trigger strictly at 03:00 AM IST
-      if (istHours === 3 && istMinutes === 0 && lastLoggedDate !== istDateString) {
+      // FIX (bug 1): trigger on a window (03:00–03:05 IST) instead of the
+      // exact minute 03:00. setInterval ticks can drift by a minute or more
+      // under event-loop delay (a slow Firebase call, a Render restart
+      // landing near 3 AM, etc.), and an exact-equality check meant a missed
+      // tick skipped the report for the entire day with no way to catch up.
+      // The lastLoggedDate guard still ensures it only fires once per day.
+      if (istHours === 3 && istMinutes >= 0 && istMinutes <= 5 && lastLoggedDate !== istDateString) {
         lastLoggedDate = istDateString;
         
         const guild = clientInstance.guilds.cache.first();
@@ -149,6 +184,17 @@ module.exports = (client) => {
           
           // Clear variables safely after sending report
           setTimeout(async () => {
+            // Capture every user we know about BEFORE clearing, so we can
+            // explicitly reset their Firebase record too (see bug 2 fix above).
+            const allKnownUsers = new Set([
+              ...dailyActiveTimes.keys(),
+              ...dailyVoiceTimes.keys(),
+              ...dailyMessageCounts.keys(),
+              ...dailyCommandCounts.keys(),
+              ...activeSessions.keys(),
+              ...voiceSessions.keys()
+            ]);
+
             dailyActiveTimes.clear();
             dailyVoiceTimes.clear();
             dailyMessageCounts.clear();
@@ -163,7 +209,7 @@ module.exports = (client) => {
               voiceSessions.set(userId, freshNow);
             }
 
-            await saveTimesToFileWithQueue();
+            await resetFirebaseRecords(allKnownUsers);
             console.log("✅ Daily tracking data has been safely cleared, reset, and saved at 3:05 AM IST.");
           }, 5 * 60 * 1000); // 5-minute buffer safely handling the 3:05 AM reset requirement
         }
@@ -483,3 +529,4 @@ async function handleShutdown(signal) {
 
 process.on("SIGINT", () => handleShutdown("SIGINT"));
 process.on("SIGTERM", () => handleShutdown("SIGTERM"));
+        
