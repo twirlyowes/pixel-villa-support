@@ -22,7 +22,7 @@ const db = require("./firebase");
 // ==================== CONFIGURATION ====================
 
 const GUILD_ID = "1510176142286389329";
-const TICKET_CATEGORY_ID = "1521077017569656946";
+const TICKET_CATEGORY_ID = "1538537441441357947";
 const LOGS_CHANNEL_ID = "1510571308952326189";
 
 const SUPPORT_ROLES = {
