@@ -1,4 +1,3 @@
-// Location: activetime.js
 const { EmbedBuilder } = require("discord.js");
 const db = require("./firebase");
 
@@ -13,7 +12,6 @@ let dailyVoiceTimes = new Map();
 let dailyMessageCounts = new Map();
 let dailyCommandCounts = new Map();
 
-// --- FIREBASE SAVE LOCK / QUEUE SYSTEM ---
 let isSaving = false;
 let savePending = false;
 
@@ -84,12 +82,6 @@ async function saveTimesToFileWithQueue() {
   }
 }
 
-// FIX (bug 2): explicitly zero out Firebase records for every staff member
-// we were tracking. Clearing the in-memory Maps and then calling
-// saveTimesToFileWithQueue() does NOT work for a reset, because that function
-// only writes users currently present in the (now-empty) daily Maps — so the
-// old totals were silently left behind in Firestore and would reappear for
-// any staff member who didn't generate new activity before the next restart.
 async function resetFirebaseRecords(userIds) {
   if (!userIds || userIds.size === 0) return;
 
@@ -140,7 +132,6 @@ module.exports = (client) => {
 
     startClockChecker(client);
 
-    // Periodic interval flush to database every 15 minutes to prevent data loss safely
     setInterval(async () => {
       const currentTimestamp = Date.now();
       for (const [userId, startTime] of activeSessions.entries()) {
@@ -161,31 +152,26 @@ module.exports = (client) => {
     let lastLoggedDate = "";
 
     setInterval(async () => {
-      // Create date object explicitly scoped to IST timezone
       const nowOptions = { timeZone: "Asia/Kolkata", hour12: false };
       const istDateString = new Intl.DateTimeFormat("en-US", { ...nowOptions, dateStyle: "short" }).format(new Date());
       const istTimeStr = new Intl.DateTimeFormat("en-US", { ...nowOptions, hour: "numeric", minute: "numeric" }).format(new Date());
       
       const [istHours, istMinutes] = istTimeStr.split(":").map(Number);
 
-      // FIX (bug 1): trigger on a window (03:00–03:05 IST) instead of the
-      // exact minute 03:00. setInterval ticks can drift by a minute or more
-      // under event-loop delay (a slow Firebase call, a Render restart
-      // landing near 3 AM, etc.), and an exact-equality check meant a missed
-      // tick skipped the report for the entire day with no way to catch up.
-      // The lastLoggedDate guard still ensures it only fires once per day.
       if (istHours === 3 && istMinutes >= 0 && istMinutes <= 5 && lastLoggedDate !== istDateString) {
         lastLoggedDate = istDateString;
         
         const guild = clientInstance.guilds.cache.first();
         if (guild) {
           console.log("[Auto-Sender] Triggering 3:00 AM IST Daily Report...");
-          await sendDailyReport(guild);
-          
-          // Clear variables safely after sending report
+          const reportSent = await sendDailyReport(guild);
+
+          if (!reportSent) {
+            console.error("⚠️ [Auto-Sender] Daily report FAILED to send — skipping the automatic reset so today's data isn't lost. Run .atlogs manually once the issue is fixed, then reset will need to be triggered again.");
+            return;
+          }
+
           setTimeout(async () => {
-            // Capture every user we know about BEFORE clearing, so we can
-            // explicitly reset their Firebase record too (see bug 2 fix above).
             const allKnownUsers = new Set([
               ...dailyActiveTimes.keys(),
               ...dailyVoiceTimes.keys(),
@@ -200,7 +186,6 @@ module.exports = (client) => {
             dailyMessageCounts.clear();
             dailyCommandCounts.clear();
             
-            // Also reset active session starting points to current timestamp so ongoing tracking doesn't break
             const freshNow = Date.now();
             for (const userId of activeSessions.keys()) {
               activeSessions.set(userId, freshNow);
@@ -211,7 +196,7 @@ module.exports = (client) => {
 
             await resetFirebaseRecords(allKnownUsers);
             console.log("✅ Daily tracking data has been safely cleared, reset, and saved at 3:05 AM IST.");
-          }, 5 * 60 * 1000); // 5-minute buffer safely handling the 3:05 AM reset requirement
+          }, 5 * 60 * 1000);
         }
       }
     }, 60 * 1000);
@@ -219,8 +204,14 @@ module.exports = (client) => {
 
   async function sendDailyReport(guild) {
     try {
-      const channel = await guild.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
-      if (!channel) return;
+      const channel = await guild.channels.fetch(LOG_CHANNEL_ID).catch((fetchErr) => {
+        console.error(`❌ [DailyReport] channels.fetch(${LOG_CHANNEL_ID}) threw:`, fetchErr && fetchErr.message ? fetchErr.message : fetchErr);
+        return null;
+      });
+      if (!channel) {
+        console.error(`❌ [DailyReport] Could not resolve log channel ${LOG_CHANNEL_ID}. Either the ID is wrong, the channel was deleted, or the bot can't see it (missing View Channel permission).`);
+        return false;
+      }
 
       const now = Date.now();
       for (const [userId, startTime] of activeSessions.entries()) {
@@ -296,9 +287,13 @@ module.exports = (client) => {
         await channel.send({ embeds: [emb] });
       }
 
+      console.log(`✅ [DailyReport] Sent successfully to #${channel.name || channel.id} (${embeds.length} embed(s), ${sortedStaff.length} staff member(s)).`);
+
       await saveTimesToFileWithQueue();
+      return true;
     } catch (err) {
-      console.error("Error sending daily report:", err);
+      console.error("❌ [DailyReport] Error sending daily report:", err && err.stack ? err.stack : err);
+      return false;
     }
   }
 
@@ -491,9 +486,6 @@ module.exports = (client) => {
   });
 };
 
-// =========================
-// Graceful Shutdown Handler
-// =========================
 
 let shuttingDown = false;
 
