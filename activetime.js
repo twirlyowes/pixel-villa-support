@@ -15,6 +15,13 @@ let dailyCommandCounts = new Map();
 let isSaving = false;
 let savePending = false;
 
+function formatHM(ms) {
+  const totalMinutes = Math.floor(ms / 60000);
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return `${h}h ${m}m`;
+}
+
 async function loadSavedTimes() {
   try {
     const snapshot = await db.collection("activetime").get();
@@ -167,7 +174,7 @@ module.exports = (client) => {
           const reportSent = await sendDailyReport(guild);
 
           if (!reportSent) {
-            console.error("⚠️ [Auto-Sender] Daily report FAILED to send — skipping the automatic reset so today's data isn't lost. Run .atlogs manually once the issue is fixed, then reset will need to be triggered again.");
+            console.error("⚠️ [Auto-Sender] Daily report FAILED to send — skipping the automatic reset so today's data isn't lost. Run atlogs manually once the issue is fixed, then reset will need to be triggered again.");
             return;
           }
 
@@ -244,17 +251,7 @@ module.exports = (client) => {
           const messages = dailyMessageCounts.get(userId) || 0;
           const commands = dailyCommandCounts.get(userId) || 0;
 
-          const actSec = Math.floor(activeTime / 1000);
-          const actH = Math.floor(actSec / 3600);
-          const actM = Math.floor((actSec % 3600) / 60);
-          const actS = actSec % 60;
-
-          const voiceSec = Math.floor(voiceTime / 1000);
-          const voiceH = Math.floor(voiceSec / 3600);
-          const voiceM = Math.floor((voiceSec % 3600) / 60);
-          const voiceS = voiceSec % 60;
-
-          reportLines.push(`<@${userId}> | Online: **${actH}h ${actM}m ${actS}s** | Voice: **${voiceH}h ${voiceM}m ${voiceS}s** | Messages: **${messages}** | Commands: **${commands}**`);
+          reportLines.push(`<@${userId}> • 🟢 **${formatHM(activeTime)}** • 🎙️ **${formatHM(voiceTime)}** • 💬 **${messages}** • ⚙️ **${commands}**`);
         }
       }
 
@@ -266,7 +263,7 @@ module.exports = (client) => {
         if ((currentFieldValue + line + "\n").length > 1024) {
           const embed = new EmbedBuilder()
             .setColor("#5865F2")
-            .setTitle(isFirstEmbed ? "Daily Staff Activity Report (3:00 AM IST)" : "Daily Staff Activity Report (continued)")
+            .setTitle(isFirstEmbed ? "Daily Staff Activity Report" : "Daily Staff Activity Report (continued)")
             .setDescription(currentFieldValue)
             .setTimestamp();
           embeds.push(embed);
@@ -278,7 +275,7 @@ module.exports = (client) => {
 
       const finalEmbed = new EmbedBuilder()
         .setColor("#5865F2")
-        .setTitle(isFirstEmbed ? "Daily Staff Activity Report (3:00 AM IST)" : "Daily Staff Activity Report (continued)")
+        .setTitle(isFirstEmbed ? "Daily Staff Activity Report" : "Daily Staff Activity Report (continued)")
         .setDescription(currentFieldValue)
         .setTimestamp();
       embeds.push(finalEmbed);
@@ -412,30 +409,11 @@ module.exports = (client) => {
       const messages = dailyMessageCounts.get(userId) || 0;
       const commands = dailyCommandCounts.get(userId) || 0;
 
-      const actSec = Math.floor(totalActive / 1000);
-      const actH = Math.floor(actSec / 3600);
-      const actM = Math.floor((actSec % 3600) / 60);
-      const actS = actSec % 60;
-
-      const voiceSec = Math.floor(totalVoice / 1000);
-      const voiceH = Math.floor(voiceSec / 3600);
-      const voiceM = Math.floor((voiceSec % 3600) / 60);
-      const voiceS = voiceSec % 60;
-
-      let currentSessionStr = "Not Active";
-      if (activeSessions.has(userId)) {
-        const sessionSec = Math.floor((now - activeSessions.get(userId)) / 1000);
-        const sH = Math.floor(sessionSec / 3600);
-        const sM = Math.floor((sessionSec % 3600) / 60);
-        const sS = sessionSec % 60;
-        currentSessionStr = `${sH}h ${sM}m ${sS}s`;
-      }
-
       const status = targetMember.presence ? targetMember.presence.status : "offline";
 
       let statusFormatted = "<a:error:1532986765105696778> Offline";
       if (status === "online") statusFormatted = "<a:ONLINE:1532986890519711815> Online";
-      else if (status === "idle") statusFormatted = "<a:Warning:1532986372716236932> Idle";
+      else if (status === "idle") statusFormatted = "<a:Moon:1532988257338527835> Idle";
       else if (status === "dnd") statusFormatted = "<a:error:1532986765105696778> Do Not Disturb";
 
       const embed = new EmbedBuilder()
@@ -446,35 +424,13 @@ module.exports = (client) => {
         })
         .setThumbnail(targetMember.user.displayAvatarURL({ dynamic: true }))
         .setDescription(
-`<:Shield_2:1532989398642327594> **Staff Activity Report**
+`<:Shield_2:1532989398642327594> **${targetMember}**
 
-━━━━━━━━━━━━━━━━━━━━━━
-
-<a:ONLINE:1532986890519711815> **Staff Member**
-> ${targetMember}
-
-<a:Clock:1532990759371018372> **Online Time**
-> ${actH}h ${actM}m ${actS}s
-
-<a:voice:1532987137199440003> **Voice Time**
-> ${voiceH}h ${voiceM}m ${voiceS}s
-
-<:Stats:1532990723408793661> **Commands Used**
-> ${commands}
-
-<a:LP_Message:1532991009066324049> **Messages Sent**
-> ${messages}
-
-<a:ONLINE:1532986890519711815> **Current Status**
-> ${statusFormatted}
-
-<a:Clock:1532990759371018372> **Current Session**
-> ${currentSessionStr}
-
-━━━━━━━━━━━━━━━━━━━━━━
-
-<a:sparkles:1532986077651140620> Activity statistics for today.
-`
+<a:Clock:1532990759371018372> Online: **${formatHM(totalActive)}**
+<a:voice:1532987137199440003> Voice: **${formatHM(totalVoice)}**
+<:Stats:1532990723408793661> Commands: **${commands}**
+<a:LP_Message:1532991009066324049> Messages: **${messages}**
+${statusFormatted}`
         )
         .setFooter({
             text: "Pixel Villa Support • Activity Module"
@@ -521,4 +477,4 @@ async function handleShutdown(signal) {
 
 process.on("SIGINT", () => handleShutdown("SIGINT"));
 process.on("SIGTERM", () => handleShutdown("SIGTERM"));
-        
+  
