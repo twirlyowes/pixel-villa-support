@@ -37,6 +37,53 @@ client.setMaxListeners(20);
 const PREFIX = ".";
 const WARN_FILE = path.join(__dirname, "warnings.json");
 
+// ===== AUTO SLOWMODE CONFIG =====
+const AUTO_SLOWMODE_CHANNEL_ID = "1519052869574201506";
+const AUTO_SLOWMODE_WINDOW_MS = 30 * 1000; // 30 second rolling window
+const AUTO_SLOWMODE_USER_THRESHOLD = 10;   // unique chatters needed to trigger
+const AUTO_SLOWMODE_SECONDS = 3;           // slowmode duration when triggered
+
+// Map<channelId, Array<{ userId, timestamp }>>
+const recentChatters = new Map();
+// Map<channelId, boolean> - tracks whether we currently believe slowmode is ON (avoids redundant API calls)
+const slowmodeState = new Map();
+
+async function handleAutoSlowmode(message) {
+  if (message.channel.id !== AUTO_SLOWMODE_CHANNEL_ID) return;
+
+  const now = Date.now();
+  let entries = recentChatters.get(message.channel.id) || [];
+
+  // Add this message's author + timestamp
+  entries.push({ userId: message.author.id, timestamp: now });
+
+  // Drop anything outside the rolling window
+  entries = entries.filter(e => now - e.timestamp <= AUTO_SLOWMODE_WINDOW_MS);
+  recentChatters.set(message.channel.id, entries);
+
+  // Count unique chatters in the window
+  const uniqueUsers = new Set(entries.map(e => e.userId)).size;
+  const isSlowmodeOn = slowmodeState.get(message.channel.id) || false;
+
+  try {
+    if (uniqueUsers >= AUTO_SLOWMODE_USER_THRESHOLD && !isSlowmodeOn) {
+      await message.channel.setRateLimitPerUser(
+        AUTO_SLOWMODE_SECONDS,
+        `Auto-slowmode: ${uniqueUsers} unique chatters in the last ${AUTO_SLOWMODE_WINDOW_MS / 1000}s`
+      );
+      slowmodeState.set(message.channel.id, true);
+    } else if (uniqueUsers < AUTO_SLOWMODE_USER_THRESHOLD && isSlowmodeOn) {
+      await message.channel.setRateLimitPerUser(
+        0,
+        `Auto-slowmode: activity dropped to ${uniqueUsers} unique chatters in the last ${AUTO_SLOWMODE_WINDOW_MS / 1000}s`
+      );
+      slowmodeState.set(message.channel.id, false);
+    }
+  } catch (err) {
+    console.error("Auto-slowmode error:", err);
+  }
+}
+
 // Safe async initialization
 (async () => {
   try {
@@ -123,6 +170,9 @@ client.once("ready", () => {
 });
 client.on("messageCreate", async (message) => {
   if (message.author.bot || !message.guild) return;
+
+  // Auto-slowmode watcher runs on every human message, independent of command routing
+  await handleAutoSlowmode(message);
 
   const rawContent = message.content.trim();
   const words = rawContent.split(/ +/);
@@ -305,7 +355,11 @@ if (command === "vcp") {
     });
   }
 
-  await user.voice.setChannel(voiceChannel);
+  // Reason is passed through so Discord's built-in Audit Log shows why the move happened
+  await user.voice.setChannel(
+    voiceChannel,
+    `Voice-pulled by ${message.author.tag}`
+  );
 
   const embed = makeEmbed(
     "Green",
@@ -313,7 +367,7 @@ if (command === "vcp") {
   );
 
   await message.reply({ embeds: [embed] });
-  await sendLog(message.guild, embed);
+  // NOTE: bot log-channel post removed for vcp per request — Discord's own Audit Log still records this move.
 }
       } catch (error) {
     console.error(`Command Error Encountered (${command}):`, error);
