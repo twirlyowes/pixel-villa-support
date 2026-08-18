@@ -15,6 +15,10 @@ let dailyCommandCounts = new Map();
 let isSaving = false;
 let savePending = false;
 
+// Persisted "did we already reset today" marker (IST date string).
+// Loaded from Firebase on startup so restarts/outages don't lose track of it.
+let lastResetDate = null;
+
 function formatHM(ms) {
   const totalMinutes = Math.floor(ms / 60000);
   const h = Math.floor(totalMinutes / 60);
@@ -37,6 +41,27 @@ async function loadSavedTimes() {
     console.log("✅ Active times loaded from Firebase");
   } catch (error) {
     console.error("❌ Firebase load error:", error);
+  }
+}
+
+async function loadLastResetDate() {
+  try {
+    const doc = await db.collection("meta").doc("dailyReset").get();
+    if (doc.exists) {
+      lastResetDate = doc.data().lastResetDate || null;
+    }
+    console.log(`✅ Last reset date loaded: ${lastResetDate || "(none recorded yet)"}`);
+  } catch (error) {
+    console.error("❌ Firebase loadLastResetDate error:", error);
+  }
+}
+
+async function saveLastResetDate(dateStr) {
+  try {
+    await db.collection("meta").doc("dailyReset").set({ lastResetDate: dateStr }, { merge: true });
+    lastResetDate = dateStr;
+  } catch (error) {
+    console.error("❌ Firebase saveLastResetDate error:", error);
   }
 }
 
@@ -121,6 +146,7 @@ module.exports = (client) => {
   client.once("ready", async () => {
     console.log("[DEBUG] Client ready event triggered. Loading saved times...");
     await loadSavedTimes();
+    await loadLastResetDate();
     const now = Date.now();
     
     for (const guild of client.guilds.cache.values()) {
@@ -155,57 +181,67 @@ module.exports = (client) => {
     }, 15 * 60 * 1000);
   });
 
+  // Self-healing daily rollover.
+  // Instead of relying purely on catching the exact 3:00-3:05 AM IST window with
+  // an in-memory flag (which silently fails/drifts if the bot is down at that time,
+  // e.g. a host/GitHub outage), this checks every minute whether today's IST date
+  // has already been marked as reset in Firebase. If the bot comes back online
+  // later in the day and the date doesn't match, it treats it as a missed reset
+  // and catches up immediately instead of waiting for tomorrow's window.
   function startClockChecker(clientInstance) {
-    let lastLoggedDate = "";
-
     setInterval(async () => {
       const nowOptions = { timeZone: "Asia/Kolkata", hour12: false };
       const istDateString = new Intl.DateTimeFormat("en-US", { ...nowOptions, dateStyle: "short" }).format(new Date());
       const istTimeStr = new Intl.DateTimeFormat("en-US", { ...nowOptions, hour: "numeric", minute: "numeric" }).format(new Date());
-      
-      const [istHours, istMinutes] = istTimeStr.split(":").map(Number);
+      const [istHours] = istTimeStr.split(":").map(Number);
 
-      if (istHours === 3 && istMinutes >= 0 && istMinutes <= 5 && lastLoggedDate !== istDateString) {
-        lastLoggedDate = istDateString;
-        
-        const guild = clientInstance.guilds.cache.first();
-        if (guild) {
-          console.log("[Auto-Sender] Triggering 3:00 AM IST Daily Report...");
-          const reportSent = await sendDailyReport(guild);
+      const alreadyResetToday = lastResetDate === istDateString;
+      if (alreadyResetToday) return;
 
-          if (!reportSent) {
-            console.error("⚠️ [Auto-Sender] Daily report FAILED to send — skipping the automatic reset so today's data isn't lost. Run atlogs manually once the issue is fixed, then reset will need to be triggered again.");
-            return;
-          }
+      const inNormalWindow = istHours === 3;
+      const overdue = istHours > 3; // any time after 3AM IST that hasn't been reset yet = missed window
 
-          setTimeout(async () => {
-            const allKnownUsers = new Set([
-              ...dailyActiveTimes.keys(),
-              ...dailyVoiceTimes.keys(),
-              ...dailyMessageCounts.keys(),
-              ...dailyCommandCounts.keys(),
-              ...activeSessions.keys(),
-              ...voiceSessions.keys()
-            ]);
+      if (!inNormalWindow && !overdue) return; // it's before 3AM IST, nothing to do yet
 
-            dailyActiveTimes.clear();
-            dailyVoiceTimes.clear();
-            dailyMessageCounts.clear();
-            dailyCommandCounts.clear();
-            
-            const freshNow = Date.now();
-            for (const userId of activeSessions.keys()) {
-              activeSessions.set(userId, freshNow);
-            }
-            for (const userId of voiceSessions.keys()) {
-              voiceSessions.set(userId, freshNow);
-            }
+      const guild = clientInstance.guilds.cache.first();
+      if (!guild) return;
 
-            await resetFirebaseRecords(allKnownUsers);
-            console.log("✅ Daily tracking data has been safely cleared, reset, and saved at 3:05 AM IST.");
-          }, 5 * 60 * 1000);
-        }
+      console.log(overdue
+        ? `[Auto-Sender] Missed 3AM IST reset for ${istDateString} (bot likely restarted/was down) — running catch-up now...`
+        : "[Auto-Sender] Triggering 3:00 AM IST Daily Report...");
+
+      const reportSent = await sendDailyReport(guild);
+
+      if (!reportSent) {
+        console.error("⚠️ [Auto-Sender] Daily report FAILED to send — skipping the automatic reset so today's data isn't lost. Run atlogs manually once the issue is fixed; reset will be retried automatically once a report send succeeds.");
+        return;
       }
+
+      const allKnownUsers = new Set([
+        ...dailyActiveTimes.keys(),
+        ...dailyVoiceTimes.keys(),
+        ...dailyMessageCounts.keys(),
+        ...dailyCommandCounts.keys(),
+        ...activeSessions.keys(),
+        ...voiceSessions.keys()
+      ]);
+
+      dailyActiveTimes.clear();
+      dailyVoiceTimes.clear();
+      dailyMessageCounts.clear();
+      dailyCommandCounts.clear();
+
+      const freshNow = Date.now();
+      for (const userId of activeSessions.keys()) {
+        activeSessions.set(userId, freshNow);
+      }
+      for (const userId of voiceSessions.keys()) {
+        voiceSessions.set(userId, freshNow);
+      }
+
+      await resetFirebaseRecords(allKnownUsers);
+      await saveLastResetDate(istDateString);
+      console.log(`✅ Daily tracking data has been safely cleared, reset, and saved for ${istDateString} IST.`);
     }, 60 * 1000);
   }
 
@@ -370,6 +406,53 @@ module.exports = (client) => {
       return;
     }
 
+    if (commandName === "resetactivetime") {
+      const hasAdmin = message.member.permissions.has("Administrator");
+      const hasRole = message.member.roles.cache.has(ATLOGS_ROLE_ID);
+
+      if (!hasAdmin && !hasRole) {
+        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("❌ You do not have permission to use this command.")] });
+      }
+
+      await message.reply("🔄 Force-resetting activity tracking now (sending a snapshot report first)...");
+
+      // Send a snapshot report of current (possibly merged) data before wiping it,
+      // so there's at least a record of what got cleared.
+      await sendDailyReport(message.guild);
+
+      const allKnownUsers = new Set([
+        ...dailyActiveTimes.keys(),
+        ...dailyVoiceTimes.keys(),
+        ...dailyMessageCounts.keys(),
+        ...dailyCommandCounts.keys(),
+        ...activeSessions.keys(),
+        ...voiceSessions.keys()
+      ]);
+
+      dailyActiveTimes.clear();
+      dailyVoiceTimes.clear();
+      dailyMessageCounts.clear();
+      dailyCommandCounts.clear();
+
+      const freshNow = Date.now();
+      for (const userId of activeSessions.keys()) {
+        activeSessions.set(userId, freshNow);
+      }
+      for (const userId of voiceSessions.keys()) {
+        voiceSessions.set(userId, freshNow);
+      }
+
+      await resetFirebaseRecords(allKnownUsers);
+
+      const nowOptions = { timeZone: "Asia/Kolkata", hour12: false };
+      const istDateString = new Intl.DateTimeFormat("en-US", { ...nowOptions, dateStyle: "short" }).format(new Date());
+      await saveLastResetDate(istDateString);
+
+      console.log(`✅ [ManualReset] Activity data force-reset by ${message.author.tag} at ${new Date().toISOString()} (marked as reset for ${istDateString} IST).`);
+      await message.channel.send("✅ Activity tracking has been reset. Fresh tracking starts now.");
+      return;
+    }
+
     if (commandName === "activetime") {
       let targetMember = message.mentions.members.first();
 
@@ -477,4 +560,3 @@ async function handleShutdown(signal) {
 
 process.on("SIGINT", () => handleShutdown("SIGINT"));
 process.on("SIGTERM", () => handleShutdown("SIGTERM"));
-  
