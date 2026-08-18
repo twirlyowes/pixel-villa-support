@@ -40,7 +40,7 @@ const WARN_FILE = path.join(__dirname, "warnings.json");
 // ===== AUTO SLOWMODE CONFIG =====
 const AUTO_SLOWMODE_CHANNEL_ID = "1519052869574201506";
 const AUTO_SLOWMODE_WINDOW_MS = 30 * 1000; // 30 second rolling window
-const AUTO_SLOWMODE_USER_THRESHOLD = 10;   // unique chatters needed to trigger
+const AUTO_SLOWMODE_USER_THRESHOLD = 5;   // unique chatters needed to trigger
 const AUTO_SLOWMODE_SECONDS = 3;           // slowmode duration when triggered
 
 // Map<channelId, Array<{ userId, timestamp }>>
