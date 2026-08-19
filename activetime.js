@@ -1,9 +1,10 @@
 const { EmbedBuilder } = require("discord.js");
 const db = require("./firebase");
 
-const STAFF_ROLE_ID = "1511051007772069929"; 
-const LOG_CHANNEL_ID = "1523648445276098680"; 
+const STAFF_ROLE_ID = "1511051007772069929";
+const LOG_CHANNEL_ID = "1523648445276098680";
 const ATLOGS_ROLE_ID = "1519005080471343216";
+const PIXEL_VILLA_GUILD_ID = "1510176142286389329";
 
 const activeSessions = new Map();
 const voiceSessions = new Map();
@@ -114,27 +115,90 @@ async function saveTimesToFileWithQueue() {
   }
 }
 
-async function resetFirebaseRecords(userIds) {
-  if (!userIds || userIds.size === 0) return;
-
+// Fetches the full, up-to-date member list (not just whatever happens to be
+// cached) so role checks are accurate — important since this only runs once
+// a day and banned/departed members must not slip through as "staff".
+async function getCurrentStaffIds(guild) {
+  const currentStaffIds = new Set();
   try {
-    const batch = db.batch();
+    const members = await guild.members.fetch();
+    members.forEach(member => {
+      if (!member.user.bot && member.roles.cache.has(STAFF_ROLE_ID)) {
+        currentStaffIds.add(member.id);
+      }
+    });
+  } catch (error) {
+    console.error("❌ [Staff Check] guild.members.fetch() failed:", error && error.stack ? error.stack : error);
+  }
+  return currentStaffIds;
+}
 
-    for (const userId of userIds) {
-      const ref = db.collection("activetime").doc(userId);
-      batch.set(ref, {
-        activeTime: 0,
-        voiceTime: 0,
-        messages: 0,
-        commands: 0,
-        updatedAt: new Date()
-      }, { merge: true });
-    }
+// Daily rollover: for members who currently hold the staff role, reset their
+// stats to 0 for the new day. For any Firebase record whose member no longer
+// holds the staff role (banned, left, demoted), delete the record entirely
+// instead of just zeroing it out. Reads directly from the Firebase collection
+// (not just in-memory maps) so stale/banned records get cleaned up even if
+// they weren't touched since the bot last started.
+async function performDailyRollover(guild) {
+  try {
+    const currentStaffIds = await getCurrentStaffIds(guild);
+
+    const snapshot = await db.collection("activetime").get();
+    const batch = db.batch();
+    let resetCount = 0;
+    let deletedCount = 0;
+
+    snapshot.forEach(doc => {
+      if (currentStaffIds.has(doc.id)) {
+        batch.set(doc.ref, {
+          activeTime: 0,
+          voiceTime: 0,
+          messages: 0,
+          commands: 0,
+          updatedAt: new Date()
+        }, { merge: true });
+        resetCount++;
+      } else {
+        batch.delete(doc.ref);
+        deletedCount++;
+      }
+    });
 
     await batch.commit();
-    console.log(`✅ Reset Firebase activetime records for ${userIds.size} staff member(s).`);
+
+    // Mirror the same cleanup in memory: drop anyone who's no longer staff,
+    // zero out everyone who still is.
+    const allTrackedIds = new Set([
+      ...dailyActiveTimes.keys(),
+      ...dailyVoiceTimes.keys(),
+      ...dailyMessageCounts.keys(),
+      ...dailyCommandCounts.keys(),
+      ...activeSessions.keys(),
+      ...voiceSessions.keys()
+    ]);
+
+    const freshNow = Date.now();
+    for (const userId of allTrackedIds) {
+      if (currentStaffIds.has(userId)) {
+        dailyActiveTimes.set(userId, 0);
+        dailyVoiceTimes.set(userId, 0);
+        dailyMessageCounts.set(userId, 0);
+        dailyCommandCounts.set(userId, 0);
+        if (activeSessions.has(userId)) activeSessions.set(userId, freshNow);
+        if (voiceSessions.has(userId)) voiceSessions.set(userId, freshNow);
+      } else {
+        dailyActiveTimes.delete(userId);
+        dailyVoiceTimes.delete(userId);
+        dailyMessageCounts.delete(userId);
+        dailyCommandCounts.delete(userId);
+        activeSessions.delete(userId);
+        voiceSessions.delete(userId);
+      }
+    }
+
+    console.log(`✅ Daily rollover complete: reset ${resetCount} current staff member(s), deleted ${deletedCount} non-staff/banned record(s).`);
   } catch (error) {
-    console.error("❌ Firebase reset error:", error);
+    console.error("❌ [DailyRollover] Error:", error && error.stack ? error.stack : error);
   }
 }
 
@@ -148,7 +212,7 @@ module.exports = (client) => {
     await loadSavedTimes();
     await loadLastResetDate();
     const now = Date.now();
-    
+
     for (const guild of client.guilds.cache.values()) {
       guild.members.cache.forEach(member => {
         if (!member.user.bot && isStaff(member)) {
@@ -203,8 +267,15 @@ module.exports = (client) => {
 
       if (!inNormalWindow && !overdue) return; // it's before 3AM IST, nothing to do yet
 
-      const guild = clientInstance.guilds.cache.first();
-      if (!guild) return;
+      // Pinned to Pixel Villa specifically — DO NOT use guilds.cache.first().
+      // If the bot is ever in more than one server, .first() can silently
+      // resolve to the wrong guild, which is what caused the
+      // "fetched channel does not belong to this manager's guild" errors.
+      const guild = clientInstance.guilds.cache.get(PIXEL_VILLA_GUILD_ID);
+      if (!guild) {
+        console.error(`❌ [Auto-Sender] Could not find guild ${PIXEL_VILLA_GUILD_ID} in client.guilds.cache.`);
+        return;
+      }
 
       console.log(overdue
         ? `[Auto-Sender] Missed 3AM IST reset for ${istDateString} (bot likely restarted/was down) — running catch-up now...`
@@ -217,29 +288,7 @@ module.exports = (client) => {
         return;
       }
 
-      const allKnownUsers = new Set([
-        ...dailyActiveTimes.keys(),
-        ...dailyVoiceTimes.keys(),
-        ...dailyMessageCounts.keys(),
-        ...dailyCommandCounts.keys(),
-        ...activeSessions.keys(),
-        ...voiceSessions.keys()
-      ]);
-
-      dailyActiveTimes.clear();
-      dailyVoiceTimes.clear();
-      dailyMessageCounts.clear();
-      dailyCommandCounts.clear();
-
-      const freshNow = Date.now();
-      for (const userId of activeSessions.keys()) {
-        activeSessions.set(userId, freshNow);
-      }
-      for (const userId of voiceSessions.keys()) {
-        voiceSessions.set(userId, freshNow);
-      }
-
-      await resetFirebaseRecords(allKnownUsers);
+      await performDailyRollover(guild);
       await saveLastResetDate(istDateString);
       console.log(`✅ Daily tracking data has been safely cleared, reset, and saved for ${istDateString} IST.`);
     }, 60 * 1000);
@@ -247,7 +296,11 @@ module.exports = (client) => {
 
   async function sendDailyReport(guild) {
     try {
-      const channel = await guild.channels.fetch(LOG_CHANNEL_ID).catch((fetchErr) => {
+      // Global channel lookup — does not depend on the channel "belonging"
+      // to a specific guild object the way guild.channels.fetch() does, so
+      // it can't throw the guild-mismatch error that guild.channels.fetch
+      // was throwing when the wrong guild object was in play.
+      const channel = await client.channels.fetch(LOG_CHANNEL_ID).catch((fetchErr) => {
         console.error(`❌ [DailyReport] channels.fetch(${LOG_CHANNEL_ID}) threw:`, fetchErr && fetchErr.message ? fetchErr.message : fetchErr);
         return null;
       });
@@ -266,14 +319,29 @@ module.exports = (client) => {
         voiceSessions.set(userId, now);
       }
 
-      const allStaffIds = new Set([
+      // Only current staff (fetched fresh, not cache) — filters out banned/
+      // departed members who still have leftover Firebase docs.
+      const currentStaffIds = await getCurrentStaffIds(guild);
+
+      const allKnownIds = new Set([
         ...dailyActiveTimes.keys(),
         ...dailyVoiceTimes.keys(),
         ...dailyMessageCounts.keys(),
         ...dailyCommandCounts.keys()
       ]);
 
-      const sortedStaff = Array.from(allStaffIds).sort((a, b) => {
+      // Only members who are (a) still staff and (b) have at least some
+      // non-zero activity today.
+      const eligibleStaff = Array.from(allKnownIds).filter(userId => {
+        if (!currentStaffIds.has(userId)) return false;
+        const activeTime = dailyActiveTimes.get(userId) || 0;
+        const voiceTime = dailyVoiceTimes.get(userId) || 0;
+        const messages = dailyMessageCounts.get(userId) || 0;
+        const commands = dailyCommandCounts.get(userId) || 0;
+        return activeTime > 0 || voiceTime > 0 || messages > 0 || commands > 0;
+      });
+
+      const sortedStaff = eligibleStaff.sort((a, b) => {
         return (dailyActiveTimes.get(b) || 0) - (dailyActiveTimes.get(a) || 0);
       });
 
@@ -420,29 +488,7 @@ module.exports = (client) => {
       // so there's at least a record of what got cleared.
       await sendDailyReport(message.guild);
 
-      const allKnownUsers = new Set([
-        ...dailyActiveTimes.keys(),
-        ...dailyVoiceTimes.keys(),
-        ...dailyMessageCounts.keys(),
-        ...dailyCommandCounts.keys(),
-        ...activeSessions.keys(),
-        ...voiceSessions.keys()
-      ]);
-
-      dailyActiveTimes.clear();
-      dailyVoiceTimes.clear();
-      dailyMessageCounts.clear();
-      dailyCommandCounts.clear();
-
-      const freshNow = Date.now();
-      for (const userId of activeSessions.keys()) {
-        activeSessions.set(userId, freshNow);
-      }
-      for (const userId of voiceSessions.keys()) {
-        voiceSessions.set(userId, freshNow);
-      }
-
-      await resetFirebaseRecords(allKnownUsers);
+      await performDailyRollover(message.guild);
 
       const nowOptions = { timeZone: "Asia/Kolkata", hour12: false };
       const istDateString = new Intl.DateTimeFormat("en-US", { ...nowOptions, dateStyle: "short" }).format(new Date());
@@ -524,6 +570,7 @@ ${statusFormatted}`
     }
   });
 };
+
 
 
 let shuttingDown = false;
