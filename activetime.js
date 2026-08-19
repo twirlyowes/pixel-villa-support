@@ -16,9 +16,11 @@ let dailyCommandCounts = new Map();
 let isSaving = false;
 let savePending = false;
 
-// Persisted "did we already reset today" marker (IST date string).
-// Loaded from Firebase on startup so restarts/outages don't lose track of it.
+// Persisted "did we already X today" markers (IST date strings).
+// Report and reset are tracked separately so they can fire 5 minutes apart,
+// matching the original 3:00 report / 3:05 reset schedule.
 let lastResetDate = null;
+let lastReportDate = null;
 
 function formatHM(ms) {
   const totalMinutes = Math.floor(ms / 60000);
@@ -50,8 +52,9 @@ async function loadLastResetDate() {
     const doc = await db.collection("meta").doc("dailyReset").get();
     if (doc.exists) {
       lastResetDate = doc.data().lastResetDate || null;
+      lastReportDate = doc.data().lastReportDate || null;
     }
-    console.log(`✅ Last reset date loaded: ${lastResetDate || "(none recorded yet)"}`);
+    console.log(`✅ Last reset date loaded: ${lastResetDate || "(none recorded yet)"} | Last report date: ${lastReportDate || "(none recorded yet)"}`);
   } catch (error) {
     console.error("❌ Firebase loadLastResetDate error:", error);
   }
@@ -63,6 +66,15 @@ async function saveLastResetDate(dateStr) {
     lastResetDate = dateStr;
   } catch (error) {
     console.error("❌ Firebase saveLastResetDate error:", error);
+  }
+}
+
+async function saveLastReportDate(dateStr) {
+  try {
+    await db.collection("meta").doc("dailyReset").set({ lastReportDate: dateStr }, { merge: true });
+    lastReportDate = dateStr;
+  } catch (error) {
+    console.error("❌ Firebase saveLastReportDate error:", error);
   }
 }
 
@@ -115,60 +127,15 @@ async function saveTimesToFileWithQueue() {
   }
 }
 
-// Fetches the full, up-to-date member list (not just whatever happens to be
-// cached) so role checks are accurate — important since this only runs once
-// a day and banned/departed members must not slip through as "staff".
-async function getCurrentStaffIds(guild) {
-  const currentStaffIds = new Set();
+// SAFE daily rollover: resets everyone's stats to 0 for the new day.
+// Does NOT delete anything and does NOT depend on any Discord API fetch —
+// this is pure in-memory + Firebase writes, so it cannot fail due to rate
+// limits, cannot be tricked by an empty fetch result, and can never wipe
+// data based on a fetch failure. Deletion only ever happens via the
+// explicit, admin-triggered .removeuser command below.
+async function performDailyReset() {
   try {
-    const members = await guild.members.fetch();
-    members.forEach(member => {
-      if (!member.user.bot && member.roles.cache.has(STAFF_ROLE_ID)) {
-        currentStaffIds.add(member.id);
-      }
-    });
-  } catch (error) {
-    console.error("❌ [Staff Check] guild.members.fetch() failed:", error && error.stack ? error.stack : error);
-  }
-  return currentStaffIds;
-}
-
-// Daily rollover: for members who currently hold the staff role, reset their
-// stats to 0 for the new day. For any Firebase record whose member no longer
-// holds the staff role (banned, left, demoted), delete the record entirely
-// instead of just zeroing it out. Reads directly from the Firebase collection
-// (not just in-memory maps) so stale/banned records get cleaned up even if
-// they weren't touched since the bot last started.
-async function performDailyRollover(guild) {
-  try {
-    const currentStaffIds = await getCurrentStaffIds(guild);
-
-    const snapshot = await db.collection("activetime").get();
-    const batch = db.batch();
-    let resetCount = 0;
-    let deletedCount = 0;
-
-    snapshot.forEach(doc => {
-      if (currentStaffIds.has(doc.id)) {
-        batch.set(doc.ref, {
-          activeTime: 0,
-          voiceTime: 0,
-          messages: 0,
-          commands: 0,
-          updatedAt: new Date()
-        }, { merge: true });
-        resetCount++;
-      } else {
-        batch.delete(doc.ref);
-        deletedCount++;
-      }
-    });
-
-    await batch.commit();
-
-    // Mirror the same cleanup in memory: drop anyone who's no longer staff,
-    // zero out everyone who still is.
-    const allTrackedIds = new Set([
+    const allKnownIds = new Set([
       ...dailyActiveTimes.keys(),
       ...dailyVoiceTimes.keys(),
       ...dailyMessageCounts.keys(),
@@ -177,29 +144,53 @@ async function performDailyRollover(guild) {
       ...voiceSessions.keys()
     ]);
 
+    const batch = db.batch();
+    for (const userId of allKnownIds) {
+      const ref = db.collection("activetime").doc(userId);
+      batch.set(ref, {
+        activeTime: 0,
+        voiceTime: 0,
+        messages: 0,
+        commands: 0,
+        updatedAt: new Date()
+      }, { merge: true });
+    }
+    await batch.commit();
+
     const freshNow = Date.now();
-    for (const userId of allTrackedIds) {
-      if (currentStaffIds.has(userId)) {
-        dailyActiveTimes.set(userId, 0);
-        dailyVoiceTimes.set(userId, 0);
-        dailyMessageCounts.set(userId, 0);
-        dailyCommandCounts.set(userId, 0);
-        if (activeSessions.has(userId)) activeSessions.set(userId, freshNow);
-        if (voiceSessions.has(userId)) voiceSessions.set(userId, freshNow);
-      } else {
-        dailyActiveTimes.delete(userId);
-        dailyVoiceTimes.delete(userId);
-        dailyMessageCounts.delete(userId);
-        dailyCommandCounts.delete(userId);
-        activeSessions.delete(userId);
-        voiceSessions.delete(userId);
-      }
+    for (const userId of allKnownIds) {
+      dailyActiveTimes.set(userId, 0);
+      dailyVoiceTimes.set(userId, 0);
+      dailyMessageCounts.set(userId, 0);
+      dailyCommandCounts.set(userId, 0);
+      if (activeSessions.has(userId)) activeSessions.set(userId, freshNow);
+      if (voiceSessions.has(userId)) voiceSessions.set(userId, freshNow);
     }
 
-    console.log(`✅ Daily rollover complete: reset ${resetCount} current staff member(s), deleted ${deletedCount} non-staff/banned record(s).`);
+    console.log(`✅ Daily reset complete: zeroed stats for ${allKnownIds.size} tracked member(s). Nothing was deleted.`);
   } catch (error) {
-    console.error("❌ [DailyRollover] Error:", error && error.stack ? error.stack : error);
+    console.error("❌ [DailyReset] Error:", error && error.stack ? error.stack : error);
   }
+}
+
+// Explicit, admin-only removal of a single member's activetime record.
+// This is the ONLY place in the whole file that deletes Firebase data,
+// and it only ever runs when an admin/atlogs-role staff member types
+// the command with a specific user ID — never automatically.
+async function removeUserRecord(userId) {
+  try {
+    await db.collection("activetime").doc(userId).delete();
+  } catch (error) {
+    console.error(`❌ [RemoveUser] Firebase delete error for ${userId}:`, error);
+    throw error;
+  }
+
+  dailyActiveTimes.delete(userId);
+  dailyVoiceTimes.delete(userId);
+  dailyMessageCounts.delete(userId);
+  dailyCommandCounts.delete(userId);
+  activeSessions.delete(userId);
+  voiceSessions.delete(userId);
 }
 
 module.exports = (client) => {
@@ -245,61 +236,67 @@ module.exports = (client) => {
     }, 15 * 60 * 1000);
   });
 
-  // Self-healing daily rollover.
-  // Instead of relying purely on catching the exact 3:00-3:05 AM IST window with
-  // an in-memory flag (which silently fails/drifts if the bot is down at that time,
-  // e.g. a host/GitHub outage), this checks every minute whether today's IST date
-  // has already been marked as reset in Firebase. If the bot comes back online
-  // later in the day and the date doesn't match, it treats it as a missed reset
-  // and catches up immediately instead of waiting for tomorrow's window.
+  // Self-healing daily schedule — report fires at 3:00 AM IST, reset fires
+  // separately at 3:05 AM IST, matching the original timing. Each has its
+  // own persisted "already done today" marker so they can't double-fire and
+  // don't depend on each other beyond report-must-happen-before-reset.
+  // Pinned to Pixel Villa's guild ID directly (never .first()).
   function startClockChecker(clientInstance) {
+    let cycleRunning = false; // prevents overlapping ticks from firing twice
+
     setInterval(async () => {
+      if (cycleRunning) return;
+
       const nowOptions = { timeZone: "Asia/Kolkata", hour12: false };
       const istDateString = new Intl.DateTimeFormat("en-US", { ...nowOptions, dateStyle: "short" }).format(new Date());
       const istTimeStr = new Intl.DateTimeFormat("en-US", { ...nowOptions, hour: "numeric", minute: "numeric" }).format(new Date());
-      const [istHours] = istTimeStr.split(":").map(Number);
+      const [istHours, istMinutes] = istTimeStr.split(":").map(Number);
 
-      const alreadyResetToday = lastResetDate === istDateString;
-      if (alreadyResetToday) return;
+      const pastReportTime = istHours > 3 || (istHours === 3 && istMinutes >= 0);
+      const pastResetTime = istHours > 3 || (istHours === 3 && istMinutes >= 5);
 
-      const inNormalWindow = istHours === 3;
-      const overdue = istHours > 3; // any time after 3AM IST that hasn't been reset yet = missed window
+      const reportDueOrOverdue = pastReportTime && lastReportDate !== istDateString;
+      const resetDueOrOverdue = pastResetTime && lastReportDate === istDateString && lastResetDate !== istDateString;
 
-      if (!inNormalWindow && !overdue) return; // it's before 3AM IST, nothing to do yet
+      if (!reportDueOrOverdue && !resetDueOrOverdue) return;
 
-      // Pinned to Pixel Villa specifically — DO NOT use guilds.cache.first().
-      // If the bot is ever in more than one server, .first() can silently
-      // resolve to the wrong guild, which is what caused the
-      // "fetched channel does not belong to this manager's guild" errors.
       const guild = clientInstance.guilds.cache.get(PIXEL_VILLA_GUILD_ID);
       if (!guild) {
         console.error(`❌ [Auto-Sender] Could not find guild ${PIXEL_VILLA_GUILD_ID} in client.guilds.cache.`);
         return;
       }
 
-      console.log(overdue
-        ? `[Auto-Sender] Missed 3AM IST reset for ${istDateString} (bot likely restarted/was down) — running catch-up now...`
-        : "[Auto-Sender] Triggering 3:00 AM IST Daily Report...");
+      cycleRunning = true;
+      try {
+        if (reportDueOrOverdue) {
+          const overdue = istHours > 3 || istMinutes > 0;
+          console.log(overdue
+            ? `[Auto-Sender] Missed 3:00 AM IST report for ${istDateString} (bot likely restarted/was down) — sending catch-up report now...`
+            : "[Auto-Sender] Triggering 3:00 AM IST Daily Report...");
 
-      const reportSent = await sendDailyReport(guild);
+          const reportSent = await sendDailyReport(guild);
+          if (reportSent) {
+            await saveLastReportDate(istDateString);
+          } else {
+            console.error("⚠️ [Auto-Sender] Daily report FAILED to send — reset will be retried automatically once a report send succeeds. Run .atlogs manually if this keeps happening.");
+          }
+          return; // reset waits for its own tick at least 5 min later
+        }
 
-      if (!reportSent) {
-        console.error("⚠️ [Auto-Sender] Daily report FAILED to send — skipping the automatic reset so today's data isn't lost. Run atlogs manually once the issue is fixed; reset will be retried automatically once a report send succeeds.");
-        return;
+        if (resetDueOrOverdue) {
+          console.log(`[Auto-Sender] Running 3:05 AM IST reset for ${istDateString}...`);
+          await performDailyReset();
+          await saveLastResetDate(istDateString);
+          console.log(`✅ Daily tracking data has been safely reset and saved for ${istDateString} IST.`);
+        }
+      } finally {
+        cycleRunning = false;
       }
-
-      await performDailyRollover(guild);
-      await saveLastResetDate(istDateString);
-      console.log(`✅ Daily tracking data has been safely cleared, reset, and saved for ${istDateString} IST.`);
     }, 60 * 1000);
   }
 
   async function sendDailyReport(guild) {
     try {
-      // Global channel lookup — does not depend on the channel "belonging"
-      // to a specific guild object the way guild.channels.fetch() does, so
-      // it can't throw the guild-mismatch error that guild.channels.fetch
-      // was throwing when the wrong guild object was in play.
       const channel = await client.channels.fetch(LOG_CHANNEL_ID).catch((fetchErr) => {
         console.error(`❌ [DailyReport] channels.fetch(${LOG_CHANNEL_ID}) threw:`, fetchErr && fetchErr.message ? fetchErr.message : fetchErr);
         return null;
@@ -319,10 +316,6 @@ module.exports = (client) => {
         voiceSessions.set(userId, now);
       }
 
-      // Only current staff (fetched fresh, not cache) — filters out banned/
-      // departed members who still have leftover Firebase docs.
-      const currentStaffIds = await getCurrentStaffIds(guild);
-
       const allKnownIds = new Set([
         ...dailyActiveTimes.keys(),
         ...dailyVoiceTimes.keys(),
@@ -330,10 +323,10 @@ module.exports = (client) => {
         ...dailyCommandCounts.keys()
       ]);
 
-      // Only members who are (a) still staff and (b) have at least some
-      // non-zero activity today.
-      const eligibleStaff = Array.from(allKnownIds).filter(userId => {
-        if (!currentStaffIds.has(userId)) return false;
+      // Only non-zero entries shown. No live Discord API role-check here —
+      // that's what caused the rate-limit/data-loss issue. Use .removeuser
+      // to clean out banned members' records explicitly instead.
+      const eligible = Array.from(allKnownIds).filter(userId => {
         const activeTime = dailyActiveTimes.get(userId) || 0;
         const voiceTime = dailyVoiceTimes.get(userId) || 0;
         const messages = dailyMessageCounts.get(userId) || 0;
@@ -341,7 +334,7 @@ module.exports = (client) => {
         return activeTime > 0 || voiceTime > 0 || messages > 0 || commands > 0;
       });
 
-      const sortedStaff = eligibleStaff.sort((a, b) => {
+      const sortedStaff = eligible.sort((a, b) => {
         return (dailyActiveTimes.get(b) || 0) - (dailyActiveTimes.get(a) || 0);
       });
 
@@ -483,20 +476,42 @@ module.exports = (client) => {
       }
 
       await message.reply("🔄 Force-resetting activity tracking now (sending a snapshot report first)...");
-
-      // Send a snapshot report of current (possibly merged) data before wiping it,
-      // so there's at least a record of what got cleared.
       await sendDailyReport(message.guild);
-
-      await performDailyRollover(message.guild);
+      await performDailyReset();
 
       const nowOptions = { timeZone: "Asia/Kolkata", hour12: false };
       const istDateString = new Intl.DateTimeFormat("en-US", { ...nowOptions, dateStyle: "short" }).format(new Date());
+      await saveLastReportDate(istDateString);
       await saveLastResetDate(istDateString);
 
       console.log(`✅ [ManualReset] Activity data force-reset by ${message.author.tag} at ${new Date().toISOString()} (marked as reset for ${istDateString} IST).`);
       await message.channel.send("✅ Activity tracking has been reset. Fresh tracking starts now.");
       return;
+    }
+
+    // Admin-only, explicit, single-target removal — the ONLY way a record
+    // ever gets deleted. Use this for banned/removed members.
+    // Usage: .removeuser <userID>
+    if (commandName === "removeuser") {
+      const hasAdmin = message.member.permissions.has("Administrator");
+      const hasRole = message.member.roles.cache.has(ATLOGS_ROLE_ID);
+
+      if (!hasAdmin && !hasRole) {
+        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("❌ You do not have permission to use this command.")] });
+      }
+
+      const targetId = words[0] && words[0].replace(/[<@!>]/g, "");
+      if (!targetId || !/^\d{15,25}$/.test(targetId)) {
+        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("❌ Usage: `.removeuser <userID>` — provide a valid Discord user ID (or mention them).")] });
+      }
+
+      try {
+        await removeUserRecord(targetId);
+        console.log(`✅ [RemoveUser] ${message.author.tag} removed activetime record for ${targetId}.`);
+        return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription(`✅ Removed activetime record for \`${targetId}\`.`)] });
+      } catch (err) {
+        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription(`❌ Failed to remove record for \`${targetId}\`. Check the logs.`)] });
+      }
     }
 
     if (commandName === "activetime") {
@@ -570,7 +585,6 @@ ${statusFormatted}`
     }
   });
 };
-
 
 
 let shuttingDown = false;
