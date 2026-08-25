@@ -5,7 +5,10 @@ const {
   EmbedBuilder,
   PermissionsBitField,
   ActivityType,
-  Partials
+  Partials,
+  REST,
+  Routes,
+  SlashCommandBuilder
 } = require("discord.js");
 const fs = require("fs").promises; // Non-blocking async fs
 const path = require("path");
@@ -36,6 +39,30 @@ client.setMaxListeners(20);
 
 const PREFIX = ".";
 const WARN_FILE = path.join(__dirname, "warnings.json");
+
+// ===== SLASH COMMANDS CONFIG =====
+// Guild-specific registration = shows up instantly (vs global, which can take up to an hour)
+const GUILD_ID = "1510176142286389329"; // Pixel Villa
+
+const slashCommands = [
+  new SlashCommandBuilder()
+    .setName("ping")
+    .setDescription("Check bot latency")
+    .toJSON()
+];
+
+async function registerSlashCommands() {
+  try {
+    const rest = new REST({ version: "10" }).setToken(config.TOKEN);
+    await rest.put(
+      Routes.applicationGuildCommands(client.user.id, GUILD_ID),
+      { body: slashCommands }
+    );
+    console.log("✅ Slash commands registered.");
+  } catch (err) {
+    console.error("❌ Failed to register slash commands:", err);
+  }
+}
 
 // ===== AUTO SLOWMODE CONFIG =====
 const AUTO_SLOWMODE_CHANNEL_ID = "1519052869574201506";
@@ -167,7 +194,18 @@ client.once("ready", () => {
   ],
   status: "dnd",
 });
+
+  registerSlashCommands();
 });
+
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+
+  if (interaction.commandName === "ping") {
+    await interaction.reply(`🏓 Pong! Latency: ${client.ws.ping}ms`);
+  }
+});
+
 client.on("messageCreate", async (message) => {
   if (message.author.bot || !message.guild) return;
 
@@ -206,7 +244,7 @@ client.on("messageCreate", async (message) => {
           embeds: [makeEmbed("Red", "❌ You need **Manage Messages** permissions to force-stop a game.")] 
         });
       }
-      
+
       const gameManager = require("./minigames/utils/GameManager");
       if (gameManager.isGameRunning(message.channel.id)) {
         gameManager.deleteGame(message.channel.id);
