@@ -3,7 +3,7 @@ const config = require("./config.json");
 
 module.exports = (client) => {
   const PREFIX = ".";
-  const startTime = Date.now(); // Used for the .uptime command
+  const startTime = Date.now(); 
 
   function makeEmbed(color, text, user = null) {
   const embed = new EmbedBuilder()
