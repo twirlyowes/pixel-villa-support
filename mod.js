@@ -266,7 +266,7 @@ if (command === "uptime") {
   const timestamp = Math.floor(startTime / 1000);
 
   const embed = new EmbedBuilder()
-    .setTitle("PIXEL VILLA Uptime")
+    .setTitle("Pixel Villa Uptime")
     .setDescription(
       `**I am online from** <t:${timestamp}:R>\n\n` +
       `**Total Uptime:** ${days} days, ${hours} hours, ${minutes} minutes, ${seconds} seconds\n\n` +
