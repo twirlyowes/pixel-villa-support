@@ -1,4 +1,3 @@
-// Location: misc.js
 const { EmbedBuilder, PermissionsBitField, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 const axios = require("axios");
 
@@ -18,55 +17,47 @@ module.exports = (client) => {
 
     const rawContent = message.content.trim();
 
-    // ==========================
-// 1. IP COMMAND (Exact match "ip")
-// ==========================
-if (rawContent.toLowerCase() === "ip") {
-    const embed = new EmbedBuilder()
-        .setColor("#5865F2")
-        .setAuthor({
-            name: "Pixel Villa Support • Server Information",
-            iconURL: client.user.displayAvatarURL()
-        })
-        .setTitle("<:HOME:1532991400503673055> Pixel Villa Server IP")
-        .setDescription(
+    if (rawContent.toLowerCase() === "ip") {
+        const embed = new EmbedBuilder()
+            .setColor("#5865F2")
+            .setAuthor({
+                name: "Pixel Villa Support • Server Information",
+                iconURL: client.user.displayAvatarURL()
+            })
+            .setTitle("<:HOME:1532991400503673055> Pixel Villa Server IP")
+            .setDescription(
 `<a:sparkles:1532986077651140620> **Java Edition**
 <:Link:1532991169984991302> **IP:** \`mc.pixelvilla.fun:25575\`
 
 <a:sparkles:1532986077651140620> **Bedrock Edition**
 <:Link:1532991169984991302> **IP:** \`mc.pixelvilla.fun\`
 <:terminal:1532991459005829264> **Port:** \`25575\``
-        )
-        .setFooter({
-            text: `Requested by ${message.author.tag}`,
-            iconURL: message.author.displayAvatarURL({ dynamic: true })
-        })
-        .setTimestamp();
+            )
+            .setFooter({
+                text: `Requested by ${message.author.tag}`,
+                iconURL: message.author.displayAvatarURL({ dynamic: true })
+            })
+            .setTimestamp();
 
-    try {
-        await message.channel.send({
-            embeds: [embed]
-        });
-    } catch (err) {
-        console.error("[IP Command] Failed to send embed:", err);
+        try {
+            await message.channel.send({
+                embeds: [embed]
+            });
+        } catch (err) {
+            console.error("[IP Command] Failed to send embed:", err);
+        }
+
+        return;
     }
 
-    return;
-}
+    const tokens = rawContent.split(/ +/);
+    const firstWord = tokens[0].toLowerCase();
 
-const tokens = rawContent.split(/ +/);
-const firstWord = tokens[0].toLowerCase();
-
-// Support both dot-prefixed and non-prefixed commands cleanly
-const command = firstWord.startsWith(PREFIX) ? firstWord.slice(PREFIX.length) : firstWord;
-const words = [...tokens];
-words.shift(); // words array without the primary command word
-    
+    const command = firstWord.startsWith(PREFIX) ? firstWord.slice(PREFIX.length) : firstWord;
+    const words = [...tokens];
+    words.shift();
 
     try {
-      // ==========================
-      // 2. AVATAR COMMAND ("av" or "avatar")
-      // ==========================
       if (command === "av" || command === "avatar") {
         let targetUser = message.author;
         const arg = words[0];
@@ -114,9 +105,6 @@ words.shift(); // words array without the primary command word
         return message.reply({ embeds: [embed], components: [row] });
       }
 
-      // ==========================
-      // 3. USER INFO COMMAND ("ui" or "userinfo")
-      // ==========================
       if (command === "ui" || command === "userinfo") {
       let targetUser = message.author;
 let targetMember = message.member;
@@ -140,10 +128,8 @@ if (arg) {
   }
 }
 
-// Fetch full user (needed for banner & badges)
 await targetUser.fetch(true);
 
-// Acknowledgement
 let acknowledgment = "Member";
 
 if (message.guild.ownerId === targetUser.id) {
@@ -181,7 +167,6 @@ const roleCount = targetMember
   ? targetMember.roles.cache.filter((r) => r.id !== message.guild.id).size
   : 0;
 
-// Key Permissions
 const keyPermissions = targetMember
   ? targetMember.permissions
       .toArray()
@@ -193,7 +178,6 @@ const keyPermissions = targetMember
       .join(", ")
   : "None";
 
-// Badges
 const flags = await targetUser.fetchFlags();
 
 const badgeMap = {
@@ -267,9 +251,6 @@ ${acknowledgment}`
 return message.reply({ embeds: [uiEmbed] });
       }
 
-      // ==========================
-      // 4. SERVER INFO COMMAND ("si" or "serverinfo")
-      // ==========================
       if (command === "si" || command === "serverinfo") {
         const guild = message.guild;
         await guild.fetchOwner();
@@ -320,9 +301,6 @@ return message.reply({ embeds: [uiEmbed] });
         return message.reply({ embeds: [siEmbed] });
       }
 
-      // ==========================
-      // 5. STICKY COMMAND (".sticky")
-      // ==========================
       if (firstWord === ".sticky") {
         if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
           return message.reply({ embeds: [makeEmbed("Red", "You need Manage Messages permission.")] });
@@ -356,9 +334,6 @@ return message.reply({ embeds: [uiEmbed] });
         return;
       }
 
-      // ==========================
-      // 6. DM COMMAND (".dm")
-      // ==========================
       if (firstWord === ".dm") {
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
           return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("❌ You need Administrator permissions to use this command.")] });
@@ -380,9 +355,6 @@ return message.reply({ embeds: [uiEmbed] });
         return;
       }
 
-      // ==========================
-      // 7. BOTINFO COMMAND (".botinfo")
-      // ==========================
       if (firstWord === ".botinfo") {
         const totalMembers = client.guilds.cache.reduce((acc, guild) => acc + guild.memberCount, 0);
         const uptimeSec = Math.floor(client.uptime / 1000);
@@ -406,9 +378,6 @@ return message.reply({ embeds: [uiEmbed] });
         return message.reply({ embeds: [embed] });
       }
 
-      // ==========================
-      // 8. WIKI COMMAND ("wiki")
-      // ==========================
       if (command === "wiki") {
         const query = words.join(" ");
         if (!query) {
@@ -447,9 +416,6 @@ return message.reply({ embeds: [uiEmbed] });
         }
       }
 
-      // ==========================
-      // 9. HIDE COMMAND (".hide")
-      // ==========================
       if (firstWord === ".hide") {
   if (!message.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
     return message.reply({
@@ -487,9 +453,6 @@ return message.reply({ embeds: [uiEmbed] });
   return;
         }
 
-      // ==========================
-      // 10. UNHIDE COMMAND (".unhide")
-      // ==========================
      if (firstWord === ".unhide") {
   if (!message.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
     return message.reply({
@@ -527,9 +490,6 @@ return message.reply({ embeds: [uiEmbed] });
   return;
        }
 
-      // ==========================
-// 11. SAY COMMAND (".say")
-// ==========================
 if (firstWord === ".say") {
   if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
     return message.reply({
@@ -563,9 +523,6 @@ if (firstWord === ".say") {
   return message.channel.send({ embeds: [sayEmbed] });
 }
 
-// ==========================
-// 12. CALCULATE COMMAND ("calculate")
-// ==========================
 if (command === "calculate") {
   const expr = words.join("");
 
@@ -615,9 +572,6 @@ if (command === "calculate") {
   }
 }
 
-      // ==========================
-      // STICKY ENGINE CHECK
-      // ==========================
       const stickyData = stickyCache.get(message.channel.id);
       if (!stickyData || stickyData.lock) return;
 
