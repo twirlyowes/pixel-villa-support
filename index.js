@@ -45,9 +45,9 @@ const WARN_FILE = path.join(__dirname, "warnings.json");
 const GUILD_ID = "1510176142286389329"; // Pixel Villa
 
 // ===== SERVER LOCK =====
-// Bot should only ever operate in Pixel Villa. If someone adds it to another
-// server, it leaves automatically instead of sitting there idle/unauthorized.
-const ALLOWED_SERVER_ID = GUILD_ID;
+// Bot should only ever operate in these servers. If someone adds it to any
+// other server, it leaves automatically instead of sitting there idle/unauthorized.
+const ALLOWED_SERVER_IDS = [GUILD_ID, "1531246699975020544"];
 
 const slashCommands = [
   new SlashCommandBuilder()
@@ -203,7 +203,7 @@ client.once("ready", async () => {
   // One-time sweep: leave any server that isn't Pixel Villa, in case the bot
   // was already added elsewhere before this lock was in place.
   for (const guild of client.guilds.cache.values()) {
-    if (guild.id !== ALLOWED_SERVER_ID) {
+    if (!ALLOWED_SERVER_IDS.includes(guild.id)) {
       console.log(`Leaving unauthorized server: ${guild.name}`);
       await guild.leave().catch(err =>
         console.error(`Failed to leave ${guild.name}:`, err)
@@ -216,7 +216,7 @@ client.once("ready", async () => {
 
 // Ongoing guard: if someone adds the bot to a new server later, leave immediately.
 client.on("guildCreate", async (guild) => {
-  if (guild.id !== ALLOWED_SERVER_ID) {
+  if (!ALLOWED_SERVER_IDS.includes(guild.id)) {
     console.log(`Leaving unauthorized server: ${guild.name}`);
     await guild.leave().catch(err =>
       console.error(`Failed to leave ${guild.name}:`, err)
