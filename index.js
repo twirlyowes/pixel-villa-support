@@ -44,6 +44,11 @@ const WARN_FILE = path.join(__dirname, "warnings.json");
 // Guild-specific registration = shows up instantly (vs global, which can take up to an hour)
 const GUILD_ID = "1510176142286389329"; // Pixel Villa
 
+// ===== SERVER LOCK =====
+// Bot should only ever operate in Pixel Villa. If someone adds it to another
+// server, it leaves automatically instead of sitting there idle/unauthorized.
+const ALLOWED_SERVER_ID = GUILD_ID;
+
 const slashCommands = [
   new SlashCommandBuilder()
     .setName("ping")
@@ -181,7 +186,7 @@ async function sendLog(guild, embed) {
   }
 }
 
-client.once("ready", () => {
+client.once("ready", async () => {
   console.log(`${client.user.tag} is online and fully optimized!`);
 
   client.user.setPresence({
@@ -195,7 +200,28 @@ client.once("ready", () => {
   status: "dnd",
 });
 
+  // One-time sweep: leave any server that isn't Pixel Villa, in case the bot
+  // was already added elsewhere before this lock was in place.
+  for (const guild of client.guilds.cache.values()) {
+    if (guild.id !== ALLOWED_SERVER_ID) {
+      console.log(`Leaving unauthorized server: ${guild.name}`);
+      await guild.leave().catch(err =>
+        console.error(`Failed to leave ${guild.name}:`, err)
+      );
+    }
+  }
+
   registerSlashCommands();
+});
+
+// Ongoing guard: if someone adds the bot to a new server later, leave immediately.
+client.on("guildCreate", async (guild) => {
+  if (guild.id !== ALLOWED_SERVER_ID) {
+    console.log(`Leaving unauthorized server: ${guild.name}`);
+    await guild.leave().catch(err =>
+      console.error(`Failed to leave ${guild.name}:`, err)
+    );
+  }
 });
 
 client.on("interactionCreate", async (interaction) => {
@@ -455,6 +481,7 @@ console.log("Token exists:", !!config.TOKEN);
 client.login(config.TOKEN)
   .then(() => console.log("✅ Login successful"))
   .catch(err => console.error("❌ Login failed:", err));
+
 const express = require('express');
 const app = express();
 
