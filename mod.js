@@ -49,7 +49,6 @@ module.exports = (client) => {
     const command = args.shift().toLowerCase();
 
     try {
-      // 1. KICK COMMAND (.kick)
 if (command === "kick") {
   if (!message.member.roles.cache.has(config.STAFF_ROLE_ID)) {
     return message.reply({
@@ -118,7 +117,6 @@ if (command === "kick") {
   await sendLog(message.guild, embed);
 }
 
-      // 2. BAN COMMAND (.ban)
 if (command === "ban") {
   if (!message.member.roles.cache.has(config.STAFF_ROLE_ID)) {
     return message.reply({
@@ -187,14 +185,13 @@ if (command === "ban") {
   await sendLog(message.guild, embed);
       }
 
-      // 3. NICKNAME COMMAND (.nick)
       if (command === "nick") {
         if (!message.member.roles.cache.has(config.STAFF_ROLE_ID)) {
           return message.reply("u cannot use this command");
         }
 
         const user = message.mentions.members.find(m => message.content.includes(m.id));
-        const nickname = args.slice(1).join(" "); // Empty string resets the nickname
+        const nickname = args.slice(1).join(" ");
 
         if (!user) {
           return message.reply({
@@ -226,7 +223,6 @@ if (command === "ban") {
         await sendLog(message.guild, embed);
       }
 
-      // 4. PING COMMAND (.ping) - No staff role required
 if (command === "ping") {
   const sent = await message.reply({
     embeds: [
@@ -253,7 +249,6 @@ if (command === "ping") {
   await sent.edit({ embeds: [embed] });
 }
 
-// 5. UPTIME COMMAND (.uptime) - No staff role required
 if (command === "uptime") {
   const uptime = Date.now() - startTime;
   const totalSeconds = Math.floor(uptime / 1000);
@@ -278,7 +273,6 @@ if (command === "uptime") {
   await message.reply({ embeds: [embed] });
 }
 
-// 6. LOCK COMMAND (.lock)
 if (command === "lock") {
   if (!message.member.roles.cache.has(config.STAFF_ROLE_ID)) {
     return message.reply({
@@ -311,7 +305,6 @@ if (command === "lock") {
   await sendLog(message.guild, embed);
 }
 
-// 7. UNLOCK COMMAND (.unlock)
 if (command === "unlock") {
   if (!message.member.roles.cache.has(config.STAFF_ROLE_ID)) {
     return message.reply({
@@ -346,7 +339,6 @@ if (command === "unlock") {
 
     
 
-      // 8. UNBAN COMMAND (.unban)
 if (command === "unban") {
   if (!message.member.roles.cache.has(config.STAFF_ROLE_ID)) {
     return message.reply({
@@ -374,7 +366,6 @@ if (command === "unban") {
     });
   }
 
-  // Attempt to fetch the ban entry first
   const banInfo = await message.guild.bans.fetch(userId).catch(() => null);
 
   if (!banInfo) {
