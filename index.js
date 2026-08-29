@@ -14,6 +14,13 @@ const path = require("path");
 const config = require("./config.json");
 const hubCommand = require("./minigames/hub.js");
 
+config.TOKEN = process.env.DISCORD_TOKEN;
+
+if (!config.TOKEN) {
+  console.error("❌ DISCORD_TOKEN environment variable is not set.");
+  process.exit(1);
+}
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
