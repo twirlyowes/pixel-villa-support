@@ -5,7 +5,7 @@ const config = require("./config.json");
 
 const badWordsFile = path.join(__dirname, "badwords.json");
 
-// In-memory cache for ultra-fast filtering checks
+
 let badWordsCache = new Set();
 
 function loadBadWords() {
@@ -32,16 +32,15 @@ function saveBadWords() {
 }
 
 module.exports = (client) => {
-    // Initial data load on startup
+    
+    
     loadBadWords();
 
     client.on("messageCreate", async (message) => {
         try {
             if (message.author.bot || !message.guild) return;
 
-            // ==========================================
-            // MODULE 1: STAFF COMMANDS (Add, Remove, List)
-            // ==========================================
+            
             const isStaff = message.member.roles.cache.has(config.STAFF_ROLE_ID);
             const args = message.content.trim().split(/\s+/);
             const command = args[0].toLowerCase();
@@ -86,9 +85,7 @@ module.exports = (client) => {
                 }
             }
 
-            // ==========================================
-            // MODULE 2: BAD WORD FILTER (Skips Staff)
-// ==========================================
+            
 const normalized = message.content.toLowerCase();
 
 const specificWords = {
@@ -99,7 +96,7 @@ const specificWords = {
 let found = false;
 let detectedWord = null;
 
-// Specific words apply to EVERYONE, including staff
+
 for (const [word, displayName] of Object.entries(specificWords)) {
     const regex = new RegExp(`\\b${word}\\b`, "i");
 
@@ -110,7 +107,7 @@ for (const [word, displayName] of Object.entries(specificWords)) {
     }
 }
 
-// Normal bad words skip staff
+
 if (!found && !isStaff) {
     for (const word of badWordsCache) {
         const regex = new RegExp(
@@ -132,10 +129,10 @@ if (!found) return;
 
             const deletedMessage = message.content;
 
-            // Delete offensive message safely
+            
             await message.delete().catch(() => {});
 
-            // Send temporary channel warning
+            
             const warn = await message.channel.send({
     embeds: [
         new EmbedBuilder()
@@ -160,7 +157,7 @@ Please follow the server rules and keep the chat respectful.`
                 }, 5000);
             }
 
-            // Send logging payload
+            
             const logChannel = message.guild.channels.cache.get(config.LOG_CHANNEL_ID);
 
 if (logChannel) {
