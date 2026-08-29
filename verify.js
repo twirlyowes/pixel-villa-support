@@ -1,8 +1,4 @@
-/**
- * ============================================================================
- * PRODUCTION-READY DISCORD.JS V14 VERIFICATION, ROLE & SNIPE SYSTEM
- * ============================================================================
- */
+
 
 const { 
     EmbedBuilder, 
@@ -16,7 +12,7 @@ const {
     ChannelType 
 } = require('discord.js');
 
-// ==================== CONFIGURATION CONSTANTS ====================
+
 const VERIFY_CHANNEL_ID = '1522850335415078922'; // Updated verification channel ID
 const LOG_CHANNEL_ID = '1510632065622741029';     // Updated log channel ID
 
@@ -24,7 +20,7 @@ const VERIFIED_ROLE_ID = '1522848192897613824';   // Optional: Leave empty to fi
 const UNVERIFIED_ROLE_ID = '1530811687169556520'; // Optional: Leave empty to find by name 'Unverified' or set ID
 
 
-// ==================== IN-MEMORY STORAGE ====================
+
 const pendingCaptchas = new Map(); // userId -> { answer, attempts, timeoutId }
 const cooldowns = new Map();       // userId -> timestamp expiration
 const deletedMessages = new Map(); // channelId -> Array of up to 15 deleted messages
@@ -185,7 +181,7 @@ module.exports = function(client) {
     
     
 
-    // 2. Command Handler (.setup..., role, snipe)
+    
     client.on('messageCreate', async message => {
         try {
             if (!message || message.author.bot || !message.guild) return;
@@ -206,7 +202,7 @@ module.exports = function(client) {
                 return await message.reply('✅ Verification panel deployed successfully.');
             }
 
-            // ==================== ROLE MANAGEMENT COMMAND ====================
+            
             if (command === "role") {
                 if (!message.member.permissions.has(PermissionFlagsBits.ManageRoles)) {
                     const embed = new EmbedBuilder()
@@ -301,7 +297,7 @@ module.exports = function(client) {
         }
     });
 
-    // 3. Interaction Handler (Verify Button & Captcha Modal Submissions)
+    
     client.on('interactionCreate', async interaction => {
         try {
             if (interaction.isButton()) {
@@ -330,7 +326,7 @@ module.exports = function(client) {
                     });
                 }
 
-                // Math Captcha Generation (+, -, *)
+                
                 const operators = ['+', '-', '*'];
                 const operator = operators[Math.floor(Math.random() * operators.length)];
                 let num1, num2, correctAnswer;
