@@ -3,6 +3,7 @@ const config = require("./config.json");
 
 module.exports = (client) => {
   const PREFIX = ".";
+  const startTime = Date.now(); // Used for the .uptime command
 
   function makeEmbed(color, text, user = null) {
   const embed = new EmbedBuilder()
@@ -254,19 +255,25 @@ if (command === "ping") {
 
 // 5. UPTIME COMMAND (.uptime) - No staff role required
 if (command === "uptime") {
-  const totalSeconds = Math.floor(client.uptime / 1000);
+  const uptime = Date.now() - startTime;
+  const totalSeconds = Math.floor(uptime / 1000);
+
   const days = Math.floor(totalSeconds / 86400);
   const hours = Math.floor((totalSeconds % 86400) / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
 
-  const embed = makeEmbed(
-    "#57F287",
-    `<a:Clock:1532990759371018372> **Bot Uptime**
+  const timestamp = Math.floor(startTime / 1000);
 
-\`${days}d ${hours}h ${minutes}m ${seconds}s\``,
-    message.author
-  );
+  const embed = new EmbedBuilder()
+    .setTitle("PIXEL VILLA Uptime")
+    .setDescription(
+      `**I am online from** <t:${timestamp}:R>\n\n` +
+      `**Total Uptime:** ${days} days, ${hours} hours, ${minutes} minutes, ${seconds} seconds\n\n` +
+      `**Started:** <t:${timestamp}:F>\n\n` +
+      `Requested by ${message.author}`
+    )
+    .setColor("#5865F2");
 
   await message.reply({ embeds: [embed] });
 }
