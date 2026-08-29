@@ -16,9 +16,7 @@ let dailyCommandCounts = new Map();
 let isSaving = false;
 let savePending = false;
 
-// Persisted "did we already X today" markers (IST date strings).
-// Report and reset are tracked separately so they can fire 5 minutes apart,
-// matching the original 3:00 report / 3:05 reset schedule.
+
 let lastResetDate = null;
 let lastReportDate = null;
 
@@ -127,12 +125,7 @@ async function saveTimesToFileWithQueue() {
   }
 }
 
-// SAFE daily rollover: resets everyone's stats to 0 for the new day.
-// Does NOT delete anything and does NOT depend on any Discord API fetch —
-// this is pure in-memory + Firebase writes, so it cannot fail due to rate
-// limits, cannot be tricked by an empty fetch result, and can never wipe
-// data based on a fetch failure. Deletion only ever happens via the
-// explicit, admin-triggered .removeuser command below.
+
 async function performDailyReset() {
   try {
     const allKnownIds = new Set([
@@ -173,10 +166,7 @@ async function performDailyReset() {
   }
 }
 
-// Explicit, admin-only removal of a single member's activetime record.
-// This is the ONLY place in the whole file that deletes Firebase data,
-// and it only ever runs when an admin/atlogs-role staff member types
-// the command with a specific user ID — never automatically.
+
 async function removeUserRecord(userId) {
   try {
     await db.collection("activetime").doc(userId).delete();
@@ -236,11 +226,7 @@ module.exports = (client) => {
     }, 15 * 60 * 1000);
   });
 
-  // Self-healing daily schedule — report fires at 3:00 AM IST, reset fires
-  // separately at 3:05 AM IST, matching the original timing. Each has its
-  // own persisted "already done today" marker so they can't double-fire and
-  // don't depend on each other beyond report-must-happen-before-reset.
-  // Pinned to Pixel Villa's guild ID directly (never .first()).
+  
   function startClockChecker(clientInstance) {
     let cycleRunning = false; // prevents overlapping ticks from firing twice
 
@@ -323,9 +309,7 @@ module.exports = (client) => {
         ...dailyCommandCounts.keys()
       ]);
 
-      // Only non-zero entries shown. No live Discord API role-check here —
-      // that's what caused the rate-limit/data-loss issue. Use .removeuser
-      // to clean out banned members' records explicitly instead.
+      
       const eligible = Array.from(allKnownIds).filter(userId => {
         const activeTime = dailyActiveTimes.get(userId) || 0;
         const voiceTime = dailyVoiceTimes.get(userId) || 0;
@@ -489,9 +473,7 @@ module.exports = (client) => {
       return;
     }
 
-    // Admin-only, explicit, single-target removal — the ONLY way a record
-    // ever gets deleted. Use this for banned/removed members.
-    // Usage: .removeuser <userID>
+    
     if (commandName === "removeuser") {
       const hasAdmin = message.member.permissions.has("Administrator");
       const hasRole = message.member.roles.cache.has(ATLOGS_ROLE_ID);
