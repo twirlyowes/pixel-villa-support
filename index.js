@@ -1,4 +1,3 @@
-// Location: index.js
 const {
   Client,
   GatewayIntentBits,
@@ -10,10 +9,10 @@ const {
   Routes,
   SlashCommandBuilder
 } = require("discord.js");
-const fs = require("fs").promises; // Non-blocking async fs
+const fs = require("fs").promises;
 const path = require("path");
 const config = require("./config.json");
-const hubCommand = require("./minigames/hub.js"); // Integrated our minigames entry module
+const hubCommand = require("./minigames/hub.js");
 
 const client = new Client({
   intents: [
@@ -24,29 +23,21 @@ const client = new Client({
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildPresences,
 
-    // REQUIRED FOR MODMAIL DMs
     GatewayIntentBits.DirectMessages
   ],
 
-  // REQUIRED FOR DM CHANNELS
   partials: [
     Partials.Channel
   ]
 });
 
-// Fix: Increase max listeners to prevent the memory leak warning since multiple modules attach messageCreate/presence listeners
 client.setMaxListeners(20);
 
 const PREFIX = ".";
 const WARN_FILE = path.join(__dirname, "warnings.json");
 
-// ===== SLASH COMMANDS CONFIG =====
-// Guild-specific registration = shows up instantly (vs global, which can take up to an hour)
-const GUILD_ID = "1510176142286389329"; // Pixel Villa
+const GUILD_ID = "1510176142286389329";
 
-// ===== SERVER LOCK =====
-// Bot should only ever operate in these servers. If someone adds it to any
-// other server, it leaves automatically instead of sitting there idle/unauthorized.
 const ALLOWED_SERVER_IDS = [GUILD_ID, "1531246699975020544"];
 
 const slashCommands = [
@@ -69,15 +60,12 @@ async function registerSlashCommands() {
   }
 }
 
-// ===== AUTO SLOWMODE CONFIG =====
 const AUTO_SLOWMODE_CHANNEL_ID = "1519052869574201506";
-const AUTO_SLOWMODE_WINDOW_MS = 30 * 1000; // 30 second rolling window
-const AUTO_SLOWMODE_USER_THRESHOLD = 8;   // unique chatters needed to trigger
-const AUTO_SLOWMODE_SECONDS = 3;           // slowmode duration when triggered
+const AUTO_SLOWMODE_WINDOW_MS = 30 * 1000;
+const AUTO_SLOWMODE_USER_THRESHOLD = 8;
+const AUTO_SLOWMODE_SECONDS = 3;
 
-// Map<channelId, Array<{ userId, timestamp }>>
 const recentChatters = new Map();
-// Map<channelId, boolean> - tracks whether we currently believe slowmode is ON (avoids redundant API calls)
 const slowmodeState = new Map();
 
 async function handleAutoSlowmode(message) {
@@ -86,14 +74,11 @@ async function handleAutoSlowmode(message) {
   const now = Date.now();
   let entries = recentChatters.get(message.channel.id) || [];
 
-  // Add this message's author + timestamp
   entries.push({ userId: message.author.id, timestamp: now });
 
-  // Drop anything outside the rolling window
   entries = entries.filter(e => now - e.timestamp <= AUTO_SLOWMODE_WINDOW_MS);
   recentChatters.set(message.channel.id, entries);
 
-  // Count unique chatters in the window
   const uniqueUsers = new Set(entries.map(e => e.userId)).size;
   const isSlowmodeOn = slowmodeState.get(message.channel.id) || false;
 
@@ -116,7 +101,6 @@ async function handleAutoSlowmode(message) {
   }
 }
 
-// Safe async initialization
 (async () => {
   try {
     await fs.access(WARN_FILE);
@@ -200,8 +184,6 @@ client.once("ready", async () => {
   status: "dnd",
 });
 
-  // One-time sweep: leave any server that isn't Pixel Villa, in case the bot
-  // was already added elsewhere before this lock was in place.
   for (const guild of client.guilds.cache.values()) {
     if (!ALLOWED_SERVER_IDS.includes(guild.id)) {
       console.log(`Leaving unauthorized server: ${guild.name}`);
@@ -214,7 +196,6 @@ client.once("ready", async () => {
   registerSlashCommands();
 });
 
-// Ongoing guard: if someone adds the bot to a new server later, leave immediately.
 client.on("guildCreate", async (guild) => {
   if (!ALLOWED_SERVER_IDS.includes(guild.id)) {
     console.log(`Leaving unauthorized server: ${guild.name}`);
@@ -235,7 +216,6 @@ client.on("interactionCreate", async (interaction) => {
 client.on("messageCreate", async (message) => {
   if (message.author.bot || !message.guild) return;
 
-  // Auto-slowmode watcher runs on every human message, independent of command routing
   await handleAutoSlowmode(message);
 
   const rawContent = message.content.trim();
@@ -245,7 +225,6 @@ client.on("messageCreate", async (message) => {
   let command = "";
   let args = [];
 
-  // Route prefix-less commands vs prefixed commands
   if (firstWord === "purge" || firstWord === "vcp") {
     command = firstWord;
     args = words.slice(1);
@@ -257,13 +236,11 @@ client.on("messageCreate", async (message) => {
   }
 
   try {
-    // 0. MINIGAMES HUB COMMAND (Requires Prefix: .minigames)
     if (command === "minigames") {
       await hubCommand.execute(message, args);
       return; 
     }
 
-    // 0.5 EMERGENCY FORCE STOP COMMAND (Requires Prefix: .stopgame)
     if (command === "stopgame") {
       if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
         return message.reply({ 
@@ -284,10 +261,9 @@ client.on("messageCreate", async (message) => {
       }
     }
 
-    // 1. MUTE COMMAND (Requires Prefix)
     if (command === "mute") {
       const user = message.mentions.members.first();
-      const time = args[1]; // args[0] is the mention, args[1] is the time duration
+      const time = args[1];
       const reason = args.slice(2).join(" ") || "No reason provided";
 
       if (!user || !time || !ms(time)) {
@@ -319,7 +295,6 @@ client.on("messageCreate", async (message) => {
       await sendLog(message.guild, embed);
     }
 
-    // 2. UNMUTE COMMAND (Requires Prefix)
     if (command === "unmute") {
       const user = message.mentions.members.first();
 
@@ -352,7 +327,6 @@ client.on("messageCreate", async (message) => {
       await sendLog(message.guild, embed);
     }
 
-    // 3. PURGE COMMAND (No Prefix)
     if (command === "purge") {
       if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
         return message.reply({
@@ -379,7 +353,6 @@ client.on("messageCreate", async (message) => {
       setTimeout(() => successMsg.delete().catch(() => {}), 4000);
     }
 
-    // 4. VOICE CHANNEL PULL (VCP) COMMAND (No Prefix)
 if (command === "vcp") {
   const search = args.join(" ").trim().toLowerCase();
 
@@ -419,7 +392,6 @@ if (command === "vcp") {
     });
   }
 
-  // Reason is passed through so Discord's built-in Audit Log shows why the move happened
   await user.voice.setChannel(
     voiceChannel,
     `Voice-pulled by ${message.author.tag}`
@@ -431,7 +403,6 @@ if (command === "vcp") {
   );
 
   await message.reply({ embeds: [embed] });
-  // NOTE: bot log-channel post removed for vcp per request — Discord's own Audit Log still records this move.
 }
       } catch (error) {
     console.error(`Command Error Encountered (${command}):`, error);
