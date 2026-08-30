@@ -68,9 +68,9 @@ async function registerSlashCommands() {
 }
 
 const AUTO_SLOWMODE_CHANNEL_ID = "1519052869574201506";
-const AUTO_SLOWMODE_WINDOW_MS = 30 * 1000;
+const AUTO_SLOWMODE_WINDOW_MS = 15 * 1000;
 const AUTO_SLOWMODE_USER_THRESHOLD = 8;
-const AUTO_SLOWMODE_SECONDS = 3;
+const AUTO_SLOWMODE_SECONDS = 2;
 
 const recentChatters = new Map();
 const slowmodeState = new Map();
