@@ -40,6 +40,53 @@ const client = new Client({
 
 client.setMaxListeners(20);
 
+// ─────────────────────────────────────────────
+// Resilience: connection/error logging + watchdog
+// ─────────────────────────────────────────────
+client.on("error", (err) => {
+  console.error("❌ Client error:", err);
+});
+
+client.on("shardError", (err) => {
+  console.error("❌ Shard error:", err);
+});
+
+client.on("shardDisconnect", (event, id) => {
+  console.warn(`⚠️ Shard ${id} disconnected. Code: ${event.code}, Reason: ${event.reason}`);
+});
+
+client.on("shardReconnecting", (id) => {
+  console.log(`🔄 Shard ${id} reconnecting...`);
+});
+
+client.on("shardResume", (id, replayed) => {
+  console.log(`✅ Shard ${id} resumed. Replayed ${replayed} events.`);
+});
+
+client.on("invalidated", () => {
+  console.error("❌ Session invalidated — forcing restart");
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("❌ Unhandled rejection:", reason);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("❌ Uncaught exception:", err);
+  process.exit(1);
+});
+
+// Watchdog: if the gateway connection ever goes stale/dead without
+// the process crashing, force an exit so Render restarts the service.
+setInterval(() => {
+  if (client.ws.status !== 0) { // 0 = READY
+    console.error(`⚠️ WS not ready (status ${client.ws.status}) — restarting`);
+    process.exit(1);
+  }
+}, 5 * 60 * 1000);
+// ─────────────────────────────────────────────
+
 const PREFIX = ".";
 const WARN_FILE = path.join(__dirname, "warnings.json");
 
