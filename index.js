@@ -304,36 +304,61 @@ client.on("messageCreate", async (message) => {
     }
 
     if (command === "unmute") {
-      const user = message.mentions.members.first();
+  const user = message.mentions.members.first();
 
-      if (!user) {
-        return message.reply({
-          embeds: [makeEmbed("Red", `**Usage:** ${PREFIX}unmute @user`)]
-        });
-      }
+  if (!user) {
+    return message.reply({
+      embeds: [makeEmbed("Red", `**Usage:** \`${PREFIX}unmute @user\``)]
+    });
+  }
 
-      if (!hasModPermission(message.member)) {
-        return message.reply({
-          embeds: [makeEmbed("Red", "You need the **Moderate Members** permission.")]
-        });
-      }
+  if (!hasModPermission(message.member)) {
+    return message.reply({
+      embeds: [makeEmbed("Red", "You need the **Moderate Members** permission.")]
+    });
+  }
 
-      if (!user.isCommunicationDisabled()) {
-        return message.reply({
-          embeds: [makeEmbed("Red", "That user is not currently muted.")]
-        });
-      }
+  if (!user.isCommunicationDisabled()) {
+    return message.reply({
+      embeds: [makeEmbed("Red", "That user is not currently muted.")]
+    });
+  }
 
-      await user.timeout(null);
+  if (!user.moderatable) {
+    return message.reply({
+      embeds: [makeEmbed("Red", "I can't unmute that user — their role is higher than mine.")]
+    });
+  }
 
-      const embed = makeEmbed(
-        "Green",
-        `**${user.user.tag}** has been unmuted.\n\n**Moderator:** ${message.author.tag}`
-      );
+  const wasMutedUntil = user.communicationDisabledUntilTimestamp;
 
-      await message.reply({ embeds: [embed] });
-      await sendLog(message.guild, embed);
-    }
+  try {
+    await user.timeout(null, `Unmuted by ${message.author.tag}`);
+  } catch (err) {
+    console.error("Unmute failed:", err);
+    return message.reply({
+      embeds: [makeEmbed("Red", "Failed to unmute that user — check my role position and permissions.")]
+    });
+  }
+
+  const embed = new EmbedBuilder()
+    .setColor("#57F287")
+    .setAuthor({
+      name: user.user.tag,
+      iconURL: user.user.displayAvatarURL()
+    })
+    .setTitle("Member Unmuted")
+    .addFields(
+      { name: "User", value: `${user}`, inline: true },
+      { name: "Moderator", value: `${message.author}`, inline: true },
+      ...(wasMutedUntil ? [{ name: "Was Muted Until", value: `<t:${Math.floor(wasMutedUntil / 1000)}:R>`, inline: true }] : [])
+    )
+    .setFooter({ text: "Pixel Villa Moderation", iconURL: message.guild.iconURL() })
+    .setTimestamp();
+
+  await message.reply({ embeds: [embed] });
+  await sendLog(message.guild, embed);
+}
 
     if (command === "purge") {
       if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
