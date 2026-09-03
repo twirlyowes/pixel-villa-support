@@ -5,7 +5,6 @@ const config = require("./config.json");
 
 const badWordsFile = path.join(__dirname, "badwords.json");
 
-
 let badWordsCache = new Set();
 
 function loadBadWords() {
@@ -31,16 +30,16 @@ function saveBadWords() {
     }
 }
 
+const linkRegex = /(https?:\/\/|www\.)[^\s]+/i;
+
 module.exports = (client) => {
-    
-    
+
     loadBadWords();
 
     client.on("messageCreate", async (message) => {
         try {
             if (message.author.bot || !message.guild) return;
 
-            
             const isStaff = message.member.roles.cache.has(config.STAFF_ROLE_ID);
             const args = message.content.trim().split(/\s+/);
             const command = args[0].toLowerCase();
@@ -49,7 +48,7 @@ module.exports = (client) => {
                 // Add Word
                 if (command === "addbadword") {
                     if (!args[1]) return message.reply("Provide a word.");
-                    
+
                     const word = args[1].toLowerCase();
                     if (badWordsCache.has(word)) return message.reply("Word already exists.");
 
@@ -61,7 +60,7 @@ module.exports = (client) => {
                 // Remove Word
                 if (command === "removebadword") {
                     if (!args[1]) return message.reply("Provide a word.");
-                    
+
                     const word = args[1].toLowerCase();
                     if (!badWordsCache.has(word)) return message.reply("Word not found in database.");
 
@@ -70,7 +69,7 @@ module.exports = (client) => {
                     return message.reply("Bad word removed.");
                 }
 
-                // New Feature: List All Words
+                // List All Words
                 if (command === "badwordslist") {
                     const list = Array.from(badWordsCache);
                     if (list.length === 0) return message.reply("The bad words list is empty.");
@@ -85,71 +84,64 @@ module.exports = (client) => {
                 }
             }
 
-            
-const normalized = message.content.toLowerCase();
+            const normalized = message.content.toLowerCase();
 
-const specificWords = {
-    "adriend": "Adrien",
-    "adreind": "Adrien"
-};
+            const specificWords = {
+                "adriend": "Adrien",
+                "adreind": "Adrien"
+            };
 
-let found = false;
-let detectedWord = null;
+            let found = false;
+            let detectedWord = null;
 
+            for (const [word, displayName] of Object.entries(specificWords)) {
+                const regex = new RegExp(`\\b${word}\\b`, "i");
 
-for (const [word, displayName] of Object.entries(specificWords)) {
-    const regex = new RegExp(`\\b${word}\\b`, "i");
+                if (regex.test(normalized)) {
+                    found = true;
+                    detectedWord = displayName;
+                    break;
+                }
+            }
 
-    if (regex.test(normalized)) {
-        found = true;
-        detectedWord = displayName;
-        break;
-    }
-}
+            if (!found && !isStaff) {
+                for (const word of badWordsCache) {
+                    const regex = new RegExp(
+                        `\\b${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`,
+                        "i"
+                    );
 
+                    if (regex.test(normalized)) {
+                        found = true;
+                        detectedWord = word;
+                        break;
+                    }
+                }
+            }
 
-if (!found && !isStaff) {
-    for (const word of badWordsCache) {
-        const regex = new RegExp(
-            `\\b${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`,
-            "i"
-        );
-
-        if (regex.test(normalized)) {
-            found = true;
-            detectedWord = word;
-            break;
-        }
-    }
-}
-
-if (!found) return;
-
-
+            if (!found) return;
 
             const deletedMessage = message.content;
 
-            
             await message.delete().catch(() => {});
 
-            
             const warn = await message.channel.send({
-    embeds: [
-        new EmbedBuilder()
-            .setColor("#F1C40F")
-            .setAuthor({
-                name: "Pixel Villa Support • Auto Moderation",
-                iconURL: client.user.displayAvatarURL()
-            })
-            .setDescription(
+                embeds: [
+                    new EmbedBuilder()
+                        .setColor("#F1C40F")
+                        .setAuthor({
+                            name: "Pixel Villa Support • Auto Moderation",
+                            iconURL: client.user.displayAvatarURL()
+                        })
+                        .setDescription(
 `<a:Warning:1532986372716236932> ${message.author}
 
 Your message has been removed because it contained a prohibited word.
 
 Please follow the server rules and keep the chat respectful.`
-            )
-    ]
-}).catch(() => null);
+                        )
+                ]
+            }).catch(() => null);
 
             if (warn) {
                 setTimeout(() => {
@@ -157,18 +149,17 @@ Please follow the server rules and keep the chat respectful.`
                 }, 5000);
             }
 
-            
             const logChannel = message.guild.channels.cache.get(config.LOG_CHANNEL_ID);
 
-if (logChannel) {
-    const embed = new EmbedBuilder()
-        .setColor("#ED4245")
-        .setAuthor({
-            name: "Pixel Villa Support • Auto Moderation",
-            iconURL: client.user.displayAvatarURL()
-        })
-        .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
-        .setDescription(
+            if (logChannel) {
+                const embed = new EmbedBuilder()
+                    .setColor("#ED4245")
+                    .setAuthor({
+                        name: "Pixel Villa Support • Auto Moderation",
+                        iconURL: client.user.displayAvatarURL()
+                    })
+                    .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
+                    .setDescription(
 `<a:Warning:1532986372716236932> **Prohibited Word Detected**
 
 ━━━━━━━━━━━━━━━━━━━━━━
@@ -187,17 +178,100 @@ ${deletedMessage.slice(0, 1000)}
 ━━━━━━━━━━━━━━━━━━━━━━
 
 <a:error:1532986765105696778> The message has been automatically removed by the filter.`
-        )
-        .setFooter({
-            text: "Pixel Villa Support • Moderation Logs"
-        })
-        .setTimestamp();
+                    )
+                    .setFooter({
+                        text: "Pixel Villa Support • Moderation Logs"
+                    })
+                    .setTimestamp();
 
-    logChannel.send({ embeds: [embed] }).catch(() => {});
-}
+                logChannel.send({ embeds: [embed] }).catch(() => {});
+            }
 
-} catch (error) {
-    console.error("Filter System Error:", error);
-}
-});
+        } catch (error) {
+            console.error("Filter System Error:", error);
+        }
+    });
+
+    // Delete any message that gets a link edited into it
+    client.on("messageUpdate", async (oldMessage, newMessage) => {
+        try {
+            if (newMessage.partial) await newMessage.fetch().catch(() => {});
+            if (!newMessage.guild || newMessage.author?.bot) return;
+
+            const isStaff = newMessage.member?.roles.cache.has(config.STAFF_ROLE_ID);
+            if (isStaff) return;
+
+            const content = newMessage.content || "";
+            if (!linkRegex.test(content)) return;
+
+            const deletedMessage = content;
+
+            await newMessage.delete().catch(() => {});
+
+            const warn = await newMessage.channel.send({
+                embeds: [
+                    new EmbedBuilder()
+                        .setColor("#F1C40F")
+                        .setAuthor({
+                            name: "Pixel Villa Support • Auto Moderation",
+                            iconURL: client.user.displayAvatarURL()
+                        })
+                        .setDescription(
+`<a:Warning:1532986372716236932> ${newMessage.author}
+
+Your edited message was removed because editing in a link is not allowed.
+
+Please follow the server rules and keep the chat respectful.`
+                        )
+                ]
+            }).catch(() => null);
+
+            if (warn) {
+                setTimeout(() => {
+                    warn.delete().catch(() => {});
+                }, 5000);
+            }
+
+            const logChannel = newMessage.guild.channels.cache.get(config.LOG_CHANNEL_ID);
+
+            if (logChannel) {
+                const embed = new EmbedBuilder()
+                    .setColor("#ED4245")
+                    .setAuthor({
+                        name: "Pixel Villa Support • Auto Moderation",
+                        iconURL: client.user.displayAvatarURL()
+                    })
+                    .setThumbnail(newMessage.author.displayAvatarURL({ dynamic: true }))
+                    .setDescription(
+`<a:Warning:1532986372716236932> **Edited-In Link Detected**
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+<:Shield_2:1532989398642327594> **User**
+> ${newMessage.author} (\`${newMessage.author.id}\`)
+
+<:HOME:1532991400503673055> **Channel**
+> ${newMessage.channel}
+
+<a:LP_Message:1532991009066324049> **Edited Message Content**
+\`\`\`
+${deletedMessage.slice(0, 1000)}
+\`\`\`
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+<a:error:1532986765105696778> The message was removed because a link was added via editing.`
+                    )
+                    .setFooter({
+                        text: "Pixel Villa Support • Moderation Logs"
+                    })
+                    .setTimestamp();
+
+                logChannel.send({ embeds: [embed] }).catch(() => {});
+            }
+
+        } catch (error) {
+            console.error("Edit Link Filter Error:", error);
+        }
+    });
 };
