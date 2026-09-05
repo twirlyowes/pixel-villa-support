@@ -1542,18 +1542,20 @@ module.exports = (client) => {
     );
 };
 
-process.on(
-    "SIGINT",
-    async () => {
-        await saveAll();
-        process.exit(0);
+process.on("SIGINT", async () => {
+    try {
+        await saveTimesToFileWithQueue();
+    } catch (error) {
+        console.error("❌ Error saving active times:", error);
     }
-);
+    process.exit(0);
+});
 
-process.on(
-    "SIGTERM",
-    async () => {
-        await saveAll();
-        process.exit(0);
+process.on("SIGTERM", async () => {
+    try {
+        await saveTimesToFileWithQueue();
+    } catch (error) {
+        console.error("❌ Error saving active times:", error);
     }
-);
+    process.exit(0);
+});
