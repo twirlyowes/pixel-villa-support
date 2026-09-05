@@ -2,7 +2,6 @@ const { PermissionsBitField, MessageFlags } = require("discord.js");
 const config = require("./config.json");
 const { COLORS, createCard, getAvatarURL } = require("./lib/pixelVillaUI");
 
-// Colors used here that aren't in the shared COLORS set
 const WARNING_YELLOW = 0xFEE75C;
 const ORANGE = 0xF39C12;
 const BLURPLE = 0x5865F2;
@@ -13,7 +12,7 @@ module.exports = (client) => {
 
   function makeCard(color, text, user = null) {
     const content = user
-      ? `${text}\n-# Requested by ${user.tag}`
+      ? `${text}\n\n-# Requested by ${user.tag}`
       : text;
 
     return createCard({
@@ -39,9 +38,11 @@ module.exports = (client) => {
 
   async function sendLog(guild, options) {
     if (!config.LOG_CHANNEL_ID) return;
+
     try {
-      const channel = guild.channels.cache.get(config.LOG_CHANNEL_ID) ||
-                      await guild.channels.fetch(config.LOG_CHANNEL_ID).catch(() => null);
+      const channel =
+        guild.channels.cache.get(config.LOG_CHANNEL_ID) ||
+        await guild.channels.fetch(config.LOG_CHANNEL_ID).catch(() => null);
 
       if (channel && channel.isTextBased()) {
         await channel.send(options);
@@ -53,339 +54,382 @@ module.exports = (client) => {
 
   client.on("messageCreate", async (message) => {
     if (message.author.bot || !message.guild) return;
-
     if (!message.content.startsWith(PREFIX)) return;
 
     const args = message.content.slice(PREFIX.length).trim().split(/ +/);
     const command = args.shift().toLowerCase();
 
     try {
-if (command === "kick") {
-  if (!message.member.roles.cache.has(config.STAFF_ROLE_ID)) {
-    return message.reply(
-      cardReply(
-        COLORS.RED,
-        "<a:error:1532986765105696778> You don't have permission to use this command.",
-        message.author
-      )
-    );
-  }
-
-  const user = message.mentions.members.find(m => message.content.includes(m.id));
-  const reason = args.slice(1).join(" ") || "No reason provided";
-
-  if (!user) {
-    return message.reply(
-      cardReply(
-        WARNING_YELLOW,
-        `<a:Warning:1532986372716236932> **Usage:** \`${PREFIX}kick @user [reason]\``,
-        message.author
-      )
-    );
-  }
-
-  if (!user.kickable) {
-    return message.reply(
-      cardReply(
-        COLORS.RED,
-        "<a:error:1532986765105696778> I cannot kick this user. They may have a higher role than me or have Administrator permissions.",
-        message.author
-      )
-    );
-  }
-
-  if (!hierarchyCheck(message, user)) {
-    return message.reply(
-      cardReply(
-        COLORS.RED,
-        "<a:error:1532986765105696778> You cannot kick this user because they have an equal or higher role than you.",
-        message.author
-      )
-    );
-  }
-
-  await user.kick(reason);
-
-  const options = cardReply(
-    ORANGE,
-    `<:kick:1532337429426471044> **Member Kicked**
-
-**User:** ${user.user.tag} (\`${user.id}\`)
-**Reason:** ${reason}
-**Moderator:** ${message.author}`,
-    message.author
-  );
-
-  await message.reply(options);
-  await sendLog(message.guild, options);
-}
-
-if (command === "ban") {
-  if (!message.member.roles.cache.has(config.STAFF_ROLE_ID)) {
-    return message.reply(
-      cardReply(
-        COLORS.RED,
-        "<a:error:1532986765105696778> You don't have permission to use this command.",
-        message.author
-      )
-    );
-  }
-
-  const user = message.mentions.members.find(m => message.content.includes(m.id));
-  const reason = args.slice(1).join(" ") || "No reason provided";
-
-  if (!user) {
-    return message.reply(
-      cardReply(
-        WARNING_YELLOW,
-        `<a:Warning:1532986372716236932> **Usage:** \`${PREFIX}ban @user [reason]\``,
-        message.author
-      )
-    );
-  }
-
-  if (!user.bannable) {
-    return message.reply(
-      cardReply(
-        COLORS.RED,
-        "<a:error:1532986765105696778> I cannot ban this user. They may have a higher role than me or have Administrator permissions.",
-        message.author
-      )
-    );
-  }
-
-  if (!hierarchyCheck(message, user)) {
-    return message.reply(
-      cardReply(
-        COLORS.RED,
-        "<a:error:1532986765105696778> You cannot ban this user because they have an equal or higher role than you.",
-        message.author
-      )
-    );
-  }
-
-  await user.ban({ reason });
-
-  const options = cardReply(
-    COLORS.RED,
-    `<a:ban:1532989769766801511> **Member Banned**
-
-**User:** ${user.user.tag} (\`${user.id}\`)
-**Moderator:** ${message.author}`,
-    message.author
-  );
-
-  await message.reply(options);
-  await sendLog(message.guild, options);
-      }
-
-      if (command === "nick") {
+      if (command === "kick") {
         if (!message.member.roles.cache.has(config.STAFF_ROLE_ID)) {
-          return message.reply("u cannot use this command");
-        }
-
-        const user = message.mentions.members.find(m => message.content.includes(m.id));
-        const nickname = args.slice(1).join(" ");
-
-        if (!user) {
           return message.reply(
-            cardReply(COLORS.RED, `**Usage:** ${PREFIX}nick @user [new nickname / leave blank to reset]`)
+            cardReply(
+              COLORS.RED,
+              "<a:error:1532986765105696778> You don't have permission to use this command.",
+              message.author
+            )
           );
         }
 
-        if (!user.manageable) {
+        const user = message.mentions.members.find(m =>
+          message.content.includes(m.id)
+        );
+
+        const reason =
+          args.slice(1).join(" ") || "No reason provided";
+
+        if (!user) {
           return message.reply(
-            cardReply(COLORS.RED, "I cannot change this user's nickname. They may have a higher role than me.")
+            cardReply(
+              WARNING_YELLOW,
+              `<a:Warning:1532986372716236932> **Usage:** \`${PREFIX}kick @user [reason]\``,
+              message.author
+            )
+          );
+        }
+
+        if (!user.kickable) {
+          return message.reply(
+            cardReply(
+              COLORS.RED,
+              "<a:error:1532986765105696778> I cannot kick this user. They may have a higher role than me or have Administrator permissions.",
+              message.author
+            )
           );
         }
 
         if (!hierarchyCheck(message, user)) {
           return message.reply(
-            cardReply(COLORS.RED, "You cannot change this user's nickname due to role hierarchy.")
+            cardReply(
+              COLORS.RED,
+              "<a:error:1532986765105696778> You cannot kick this user because they have an equal or higher role than you.",
+              message.author
+            )
           );
         }
 
-        await user.setNickname(nickname || null);
+        await user.kick(reason);
 
-        const statusText = nickname ? `changed to **${nickname}**` : "reset to default";
         const options = cardReply(
-          COLORS.SKY_BLUE,
-          `**${user.user.tag}**'s nickname has been ${statusText}.\n**Moderator:** ${message.author.tag}`
+          ORANGE,
+          `<:kick:1532337429426471044> **Member Kicked**
+
+**User:** ${user.user.tag} (\`${user.id}\`)
+**Reason:** ${reason}`,
+          message.author
         );
 
         await message.reply(options);
         await sendLog(message.guild, options);
       }
 
-if (command === "ping") {
-  const sent = await message.reply(
-    cardReply(
-      BLURPLE,
-      "<a:loading:1532985888118931517> Measuring latency...",
-      message.author
-    )
-  );
+      if (command === "ban") {
+        if (!message.member.roles.cache.has(config.STAFF_ROLE_ID)) {
+          return message.reply(
+            cardReply(
+              COLORS.RED,
+              "<a:error:1532986765105696778> You don't have permission to use this command.",
+              message.author
+            )
+          );
+        }
 
-  const latency = sent.createdTimestamp - message.createdTimestamp;
-  const apiLatency = Math.round(client.ws.ping);
+        const user = message.mentions.members.find(m =>
+          message.content.includes(m.id)
+        );
 
-  await sent.edit(
-    cardReply(
-      COLORS.GREEN,
-      `<a:ONLINE:1532986890519711815> **Pong!**
+        const reason =
+          args.slice(1).join(" ") || "No reason provided";
+
+        if (!user) {
+          return message.reply(
+            cardReply(
+              WARNING_YELLOW,
+              `<a:Warning:1532986372716236932> **Usage:** \`${PREFIX}ban @user [reason]\``,
+              message.author
+            )
+          );
+        }
+
+        if (!user.bannable) {
+          return message.reply(
+            cardReply(
+              COLORS.RED,
+              "<a:error:1532986765105696778> I cannot ban this user. They may have a higher role than me or have Administrator permissions.",
+              message.author
+            )
+          );
+        }
+
+        if (!hierarchyCheck(message, user)) {
+          return message.reply(
+            cardReply(
+              COLORS.RED,
+              "<a:error:1532986765105696778> You cannot ban this user because they have an equal or higher role than you.",
+              message.author
+            )
+          );
+        }
+
+        await user.ban({ reason });
+
+        const options = cardReply(
+          COLORS.RED,
+          `<a:ban:1532989769766801511> **Member Banned**
+
+**User:** ${user.user.tag} (\`${user.id}\`)
+**Reason:** ${reason}`,
+          message.author
+        );
+
+        await message.reply(options);
+        await sendLog(message.guild, options);
+      }
+
+      if (command === "nick") {
+        if (!message.member.roles.cache.has(config.STAFF_ROLE_ID)) {
+          return message.reply(
+            cardReply(
+              COLORS.RED,
+              "<a:error:1532986765105696778> You don't have permission to use this command.",
+              message.author
+            )
+          );
+        }
+
+        const user = message.mentions.members.find(m =>
+          message.content.includes(m.id)
+        );
+
+        const nickname = args.slice(1).join(" ");
+
+        if (!user) {
+          return message.reply(
+            cardReply(
+              WARNING_YELLOW,
+              `<a:Warning:1532986372716236932> **Usage:** \`${PREFIX}nick @user [new nickname / leave blank to reset]\``,
+              message.author
+            )
+          );
+        }
+
+        if (!user.manageable) {
+          return message.reply(
+            cardReply(
+              COLORS.RED,
+              "<a:error:1532986765105696778> I cannot change this user's nickname. They may have a higher role than me.",
+              message.author
+            )
+          );
+        }
+
+        if (!hierarchyCheck(message, user)) {
+          return message.reply(
+            cardReply(
+              COLORS.RED,
+              "<a:error:1532986765105696778> You cannot change this user's nickname due to role hierarchy.",
+              message.author
+            )
+          );
+        }
+
+        await user.setNickname(nickname || null);
+
+        const statusText = nickname
+          ? `changed to **${nickname}**`
+          : "reset to default";
+
+        const options = cardReply(
+          COLORS.SKY_BLUE,
+          `**Nickname Updated**
+
+**User:** ${user.user.tag}
+**Nickname:** ${statusText}`,
+          message.author
+        );
+
+        await message.reply(options);
+        await sendLog(message.guild, options);
+      }
+
+      if (command === "ping") {
+        const sent = await message.reply(
+          cardReply(
+            BLURPLE,
+            "<a:loading:1532985888118931517> Measuring latency...",
+            message.author
+          )
+        );
+
+        const latency =
+          sent.createdTimestamp - message.createdTimestamp;
+
+        const apiLatency = Math.round(client.ws.ping);
+
+        await sent.edit(
+          cardReply(
+            COLORS.GREEN,
+            `<a:ONLINE:1532986890519711815> **Pong!**
 
 **Roundtrip Latency:** \`${latency}ms\`
 **API Latency:** \`${apiLatency}ms\``,
-      message.author
-    )
-  );
-}
+            message.author
+          )
+        );
+      }
 
-if (command === "uptime") {
-  const uptime = Date.now() - startTime;
-  const totalSeconds = Math.floor(uptime / 1000);
+      if (command === "uptime") {
+        const uptime = Date.now() - startTime;
+        const totalSeconds = Math.floor(uptime / 1000);
 
-  const days = Math.floor(totalSeconds / 86400);
-  const hours = Math.floor((totalSeconds % 86400) / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
+        const days = Math.floor(totalSeconds / 86400);
+        const hours = Math.floor((totalSeconds % 86400) / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
 
-  const timestamp = Math.floor(startTime / 1000);
+        const timestamp = Math.floor(startTime / 1000);
 
-  await message.reply(
-    cardReply(
-      BLURPLE,
-      `# Pixel Villa Uptime\n\n` +
-      `**I am online from** <t:${timestamp}:R>\n\n` +
-      `**Total Uptime:** ${days} days, ${hours} hours, ${minutes} minutes, ${seconds} seconds\n\n` +
-      `**Started:** <t:${timestamp}:F>`,
-      message.author
-    )
-  );
-}
+        await message.reply(
+          cardReply(
+            BLURPLE,
+            `# Pixel Villa Uptime
 
-if (command === "lock") {
-  if (!message.member.roles.cache.has(config.STAFF_ROLE_ID)) {
-    return message.reply(
-      cardReply(
-        COLORS.RED,
-        "<a:error:1532986765105696778> You don't have permission to use this command.",
-        message.author
-      )
-    );
-  }
+**I am online from** <t:${timestamp}:R>
 
-  const channel = message.channel;
+**Total Uptime:** ${days} days, ${hours} hours, ${minutes} minutes, ${seconds} seconds
 
-  await channel.permissionOverwrites.edit(message.guild.roles.everyone, {
-    SendMessages: false
-  });
+**Started:** <t:${timestamp}:F>`,
+            message.author
+          )
+        );
+      }
 
-  const options = cardReply(
-    COLORS.RED,
-    `<:lock:1532337641494937651> **Channel Locked**
+      if (command === "lock") {
+        if (!message.member.roles.cache.has(config.STAFF_ROLE_ID)) {
+          return message.reply(
+            cardReply(
+              COLORS.RED,
+              "<a:error:1532986765105696778> You don't have permission to use this command.",
+              message.author
+            )
+          );
+        }
 
-**Channel:** ${channel}
-**Moderator:** ${message.author}`,
-    message.author
-  );
+        const channel = message.channel;
 
-  await message.reply(options);
-  await sendLog(message.guild, options);
-}
-
-if (command === "unlock") {
-  if (!message.member.roles.cache.has(config.STAFF_ROLE_ID)) {
-    return message.reply(
-      cardReply(
-        COLORS.RED,
-        "<a:error:1532986765105696778> You don't have permission to use this command.",
-        message.author
-      )
-    );
-  }
-
-  const channel = message.channel;
-
-  await channel.permissionOverwrites.edit(message.guild.roles.everyone, {
-    SendMessages: null
-  });
-
-  const options = cardReply(
-    COLORS.GREEN,
-    `<:unlock:1532337553217294528> **Channel Unlocked**
-
-**Channel:** ${channel}
-**Moderator:** ${message.author}`,
-    message.author
-  );
-
-  await message.reply(options);
-  await sendLog(message.guild, options);
+        await channel.permissionOverwrites.edit(
+          message.guild.roles.everyone,
+          {
+            SendMessages: false
           }
+        );
 
-    
+        const options = cardReply(
+          COLORS.RED,
+          `<:lock:1532337641494937651> **Channel Locked**
 
-if (command === "unban") {
-  if (!message.member.roles.cache.has(config.STAFF_ROLE_ID)) {
-    return message.reply(
-      cardReply(
-        COLORS.RED,
-        "<a:error:1532986765105696778> You don't have permission to use this command.",
-        message.author
-      )
-    );
-  }
+**Channel:** ${channel}`,
+          message.author
+        );
 
-  const userId = args[0];
+        await message.reply(options);
+        await sendLog(message.guild, options);
+      }
 
-  if (!userId) {
-    return message.reply(
-      cardReply(
-        WARNING_YELLOW,
-        `<a:Warning:1532986372716236932> **Usage:** \`${PREFIX}unban [User ID]\``,
-        message.author
-      )
-    );
-  }
+      if (command === "unlock") {
+        if (!message.member.roles.cache.has(config.STAFF_ROLE_ID)) {
+          return message.reply(
+            cardReply(
+              COLORS.RED,
+              "<a:error:1532986765105696778> You don't have permission to use this command.",
+              message.author
+            )
+          );
+        }
 
-  const banInfo = await message.guild.bans.fetch(userId).catch(() => null);
+        const channel = message.channel;
 
-  if (!banInfo) {
-    return message.reply(
-      cardReply(
-        COLORS.RED,
-        "<a:error:1532986765105696778> This user is not banned or the provided ID is invalid.",
-        message.author
-      )
-    );
-  }
+        await channel.permissionOverwrites.edit(
+          message.guild.roles.everyone,
+          {
+            SendMessages: null
+          }
+        );
 
-  await message.guild.members.unban(userId);
+        const options = cardReply(
+          COLORS.GREEN,
+          `<:unlock:1532337553217294528> **Channel Unlocked**
 
-  const options = cardReply(
-    COLORS.GREEN,
-    `<a:success:1532986625343099050> **Member Unbanned**
+**Channel:** ${channel}`,
+          message.author
+        );
 
-**User:** ${banInfo.user.tag} (\`${banInfo.user.id}\`)
-**Moderator:** ${message.author}`,
-    message.author
-  );
+        await message.reply(options);
+        await sendLog(message.guild, options);
+      }
 
-  await message.reply(options);
-  await sendLog(message.guild, options);
-}
+      if (command === "unban") {
+        if (!message.member.roles.cache.has(config.STAFF_ROLE_ID)) {
+          return message.reply(
+            cardReply(
+              COLORS.RED,
+              "<a:error:1532986765105696778> You don't have permission to use this command.",
+              message.author
+            )
+          );
+        }
 
-} catch (error) {
-  console.error(`Error executing moderation command (${command}):`, error);
+        const userId = args[0];
 
-  message.reply(
-    cardReply(
-      COLORS.RED,
-      "<a:error:1532986765105696778> An unexpected error occurred while executing this command.",
-      message.author
-    )
-  ).catch(() => {});
-}
-});
+        if (!userId) {
+          return message.reply(
+            cardReply(
+              WARNING_YELLOW,
+              `<a:Warning:1532986372716236932> **Usage:** \`${PREFIX}unban [User ID]\``,
+              message.author
+            )
+          );
+        }
+
+        const banInfo =
+          await message.guild.bans.fetch(userId).catch(() => null);
+
+        if (!banInfo) {
+          return message.reply(
+            cardReply(
+              COLORS.RED,
+              "<a:error:1532986765105696778> This user is not banned or the provided ID is invalid.",
+              message.author
+            )
+          );
+        }
+
+        await message.guild.members.unban(userId);
+
+        const options = cardReply(
+          COLORS.GREEN,
+          `<a:success:1532986625343099050> **Member Unbanned**
+
+**User:** ${banInfo.user.tag} (\`${banInfo.user.id}\`)`,
+          message.author
+        );
+
+        await message.reply(options);
+        await sendLog(message.guild, options);
+      }
+    } catch (error) {
+      console.error(
+        `Error executing moderation command (${command}):`,
+        error
+      );
+
+      message.reply(
+        cardReply(
+          COLORS.RED,
+          "<a:error:1532986765105696778> An unexpected error occurred while executing this command.",
+          message.author
+        )
+      ).catch(() => {});
+    }
+  });
 };
