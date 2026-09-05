@@ -4,7 +4,6 @@ const {
 } = require("discord.js");
 
 const { db } = require("./firebase");
-const config = require("./config.json");
 
 const REQUEST_COLLECTION = "dashboardAuthRequests";
 const LOGIN_CODE_COLLECTION = "dashboardLoginCodes";
@@ -25,12 +24,11 @@ const ADMIN_USER_IDS = (
   .map(id => id.trim())
   .filter(Boolean);
 
-const STAFF_USER_IDS = (
-  process.env.STAFF_USER_IDS || ""
-)
-  .split(",")
-  .map(id => id.trim())
-  .filter(Boolean);
+const CODE_REQUEST_INTERVAL = 3000;
+const ACTION_INTERVAL = 3000;
+
+let authPolling = false;
+let actionPolling = false;
 
 function generateCode() {
   return crypto
@@ -86,26 +84,20 @@ async function createAuditLog({
   }
 }
 
-async function processDashboardAuthRequest(
-  client,
-  doc
-) {
+async function processDashboardAuthRequest(client, doc) {
   const data = doc.data();
 
   if (!data || data.status !== "pending") {
     return;
   }
 
-  const userId = data.userId;
+  const userId = String(data.userId || "").trim();
 
-  if (
-    !userId ||
-    !/^\d{15,25}$/.test(userId)
-  ) {
+  if (!/^\d{15,25}$/.test(userId)) {
     await doc.ref.update({
       status: "failed",
       error: "Invalid Discord User ID.",
-      completedAt: new Date(),
+      failedAt: new Date(),
     });
 
     return;
@@ -117,8 +109,13 @@ async function processDashboardAuthRequest(
       processingAt: new Date(),
     });
 
-    const user =
-      await client.users.fetch(userId);
+    if (!ADMIN_USER_IDS.includes(userId)) {
+      throw new Error(
+        "This Discord user is not an authorized administrator."
+      );
+    }
+
+    const user = await client.users.fetch(userId);
 
     if (!user) {
       throw new Error(
@@ -126,15 +123,8 @@ async function processDashboardAuthRequest(
       );
     }
 
-    if (!ADMIN_USER_IDS.includes(userId)) {
-      throw new Error(
-        "This Discord user is not an authorized administrator."
-      );
-    }
-
     const code = generateCode();
     const codeHash = hashCode(code);
-
     const expiresAt =
       Date.now() + CODE_EXPIRY_MS;
 
@@ -149,17 +139,29 @@ async function processDashboardAuthRequest(
         createdAt: new Date(),
       });
 
-    await user.send(
-      `🔐 **Pixel Villa Dashboard Login**\n\n` +
-      `Your dashboard verification code is:\n\n` +
-      `**${code}**\n\n` +
-      `This code expires in **5 minutes**.\n` +
-      `If you did not request dashboard access, you can ignore this message.`
-    );
+    try {
+      await user.send(
+        `🔐 **Pixel Villa Dashboard Login**\n\n` +
+        `Your dashboard verification code is:\n\n` +
+        `**${code}**\n\n` +
+        `This code expires in **5 minutes**.\n` +
+        `If you did not request dashboard access, you can ignore this message.`
+      );
+    } catch (dmError) {
+      await db
+        .collection(LOGIN_CODE_COLLECTION)
+        .doc(userId)
+        .delete();
+
+      throw new Error(
+        "I could not send you a Discord DM. Please enable DMs from server members and try again."
+      );
+    }
 
     await doc.ref.update({
       status: "sent",
       sentAt: new Date(),
+      completedAt: new Date(),
     });
 
     console.log(
@@ -184,12 +186,7 @@ async function processDashboardAuthRequest(
         .collection(LOGIN_CODE_COLLECTION)
         .doc(userId)
         .delete();
-    } catch (deleteError) {
-      console.error(
-        "[Dashboard Auth] Failed to clean up login code:",
-        deleteError.message
-      );
-    }
+    } catch {}
   }
 }
 
@@ -207,14 +204,9 @@ async function getDashboardGuild(client) {
   return guild;
 }
 
-async function fetchTargetMember(
-  guild,
-  userId
-) {
+async function fetchTargetMember(guild, userId) {
   try {
-    return await guild.members.fetch(
-      userId
-    );
+    return await guild.members.fetch(userId);
   } catch {
     throw new Error(
       "The target user is not a member of the server."
@@ -222,12 +214,8 @@ async function fetchTargetMember(
   }
 }
 
-function requireBotPermission(
-  guild,
-  permission
-) {
-  const me =
-    guild.members.me;
+function requireBotPermission(guild, permission) {
+  const me = guild.members.me;
 
   if (!me) {
     throw new Error(
@@ -235,9 +223,7 @@ function requireBotPermission(
     );
   }
 
-  if (
-    !me.permissions.has(permission)
-  ) {
+  if (!me.permissions.has(permission)) {
     throw new Error(
       `Bot is missing the required Discord permission: ${permission}.`
     );
@@ -246,12 +232,8 @@ function requireBotPermission(
   return me;
 }
 
-function hierarchyCheck(
-  guild,
-  target
-) {
-  const me =
-    guild.members.me;
+function hierarchyCheck(guild, target) {
+  const me = guild.members.me;
 
   if (!me) {
     throw new Error(
@@ -259,9 +241,7 @@ function hierarchyCheck(
     );
   }
 
-  if (
-    target.id === me.id
-  ) {
+  if (target.id === me.id) {
     throw new Error(
       "The bot cannot moderate itself."
     );
@@ -279,28 +259,18 @@ function hierarchyCheck(
   return true;
 }
 
-async function executeDashboardAction(
-  client,
-  doc
-) {
+async function executeDashboardAction(client, doc) {
   const data = doc.data();
 
-  if (
-    !data ||
-    data.status !== "pending"
-  ) {
+  if (!data || data.status !== "pending") {
     return;
   }
 
   const actionId =
     data.actionId || doc.id;
 
-  const action =
-    data.action;
-
-  const targetUserId =
-    data.targetUserId;
-
+  const action = data.action;
+  const targetUserId = data.targetUserId;
   const reason =
     data.reason ||
     "Dashboard moderation action";
@@ -342,9 +312,7 @@ async function executeDashboardAction(
       "unban",
     ];
 
-    if (
-      !allowedActions.includes(action)
-    ) {
+    if (!allowedActions.includes(action)) {
       throw new Error(
         "Unsupported moderation action."
       );
@@ -365,9 +333,7 @@ async function executeDashboardAction(
     }
 
     if (
-      ["kick", "ban", "unban"].includes(
-        action
-      ) &&
+      ["kick", "ban", "unban"].includes(action) &&
       !isAdmin
     ) {
       throw new Error(
@@ -384,20 +350,11 @@ async function executeDashboardAction(
         PermissionsBitField.Flags.BanMembers
       );
 
-      let ban;
-
       try {
-        ban =
-          await guild.bans.fetch(
-            targetUserId
-          );
-      } catch {
-        throw new Error(
-          "That user is not currently banned."
+        await guild.bans.fetch(
+          targetUserId
         );
-      }
-
-      if (!ban) {
+      } catch {
         throw new Error(
           "That user is not currently banned."
         );
@@ -448,10 +405,7 @@ async function executeDashboardAction(
         PermissionsBitField.Flags.ModerateMembers
       );
 
-      hierarchyCheck(
-        guild,
-        target
-      );
+      hierarchyCheck(guild, target);
 
       if (!target.moderatable) {
         throw new Error(
@@ -463,9 +417,7 @@ async function executeDashboardAction(
         Number(data.durationMs);
 
       if (
-        !Number.isFinite(
-          durationMs
-        ) ||
+        !Number.isFinite(durationMs) ||
         durationMs <= 0
       ) {
         throw new Error(
@@ -507,18 +459,13 @@ async function executeDashboardAction(
       return;
     }
 
-    if (
-      action === "remove-timeout"
-    ) {
+    if (action === "remove-timeout") {
       requireBotPermission(
         guild,
         PermissionsBitField.Flags.ModerateMembers
       );
 
-      hierarchyCheck(
-        guild,
-        target
-      );
+      hierarchyCheck(guild, target);
 
       if (!target.moderatable) {
         throw new Error(
@@ -528,7 +475,7 @@ async function executeDashboardAction(
 
       await target.timeout(
         null,
-        reason
+        reason || "Dashboard unmute"
       );
 
       await doc.ref.update({
@@ -561,7 +508,8 @@ async function executeDashboardAction(
 
     if (action === "warn") {
       const ref =
-        db.collection("warnings")
+        db
+          .collection("warnings")
           .doc(targetUserId);
 
       const existing =
@@ -578,9 +526,6 @@ async function executeDashboardAction(
           Math.random() * 900000
         ).toString();
 
-      const now =
-        new Date();
-
       const newWarning = {
         id: warnId,
         moderator:
@@ -589,7 +534,7 @@ async function executeDashboardAction(
           "Dashboard Staff",
         reason,
         timestamp:
-          now.toISOString(),
+          new Date().toISOString(),
       };
 
       const updatedWarnings = [
@@ -598,8 +543,7 @@ async function executeDashboardAction(
       ];
 
       await ref.set({
-        warnings:
-          updatedWarnings,
+        warnings: updatedWarnings,
       });
 
       let dmedUser = false;
@@ -613,9 +557,7 @@ async function executeDashboardAction(
         );
 
         dmedUser = true;
-      } catch {
-        dmedUser = false;
-      }
+      } catch {}
 
       await doc.ref.update({
         status: "completed",
@@ -655,10 +597,7 @@ async function executeDashboardAction(
         PermissionsBitField.Flags.KickMembers
       );
 
-      hierarchyCheck(
-        guild,
-        target
-      );
+      hierarchyCheck(guild, target);
 
       if (!target.kickable) {
         throw new Error(
@@ -666,9 +605,7 @@ async function executeDashboardAction(
         );
       }
 
-      await target.kick(
-        reason
-      );
+      await target.kick(reason);
 
       await doc.ref.update({
         status: "completed",
@@ -704,10 +641,7 @@ async function executeDashboardAction(
         PermissionsBitField.Flags.BanMembers
       );
 
-      hierarchyCheck(
-        guild,
-        target
-      );
+      hierarchyCheck(guild, target);
 
       if (!target.bannable) {
         throw new Error(
@@ -787,80 +721,85 @@ async function executeDashboardAction(
   }
 }
 
+async function pollAuthRequests(client) {
+  if (authPolling) {
+    return;
+  }
+
+  authPolling = true;
+
+  try {
+    const snapshot =
+      await db
+        .collection(REQUEST_COLLECTION)
+        .where("status", "==", "pending")
+        .limit(10)
+        .get();
+
+    for (const doc of snapshot.docs) {
+      await processDashboardAuthRequest(
+        client,
+        doc
+      );
+    }
+  } catch (error) {
+    console.error(
+      "[Dashboard Auth] Firebase polling error:",
+      error.message
+    );
+  } finally {
+    authPolling = false;
+  }
+}
+
+async function pollDashboardActions(client) {
+  if (actionPolling) {
+    return;
+  }
+
+  actionPolling = true;
+
+  try {
+    const snapshot =
+      await db
+        .collection(ACTION_COLLECTION)
+        .where("status", "==", "pending")
+        .limit(10)
+        .get();
+
+    for (const doc of snapshot.docs) {
+      await executeDashboardAction(
+        client,
+        doc
+      );
+    }
+  } catch (error) {
+    console.error(
+      "[Dashboard Actions] Firebase polling error:",
+      error.message
+    );
+  } finally {
+    actionPolling = false;
+  }
+}
+
 function startDashboardAuth(client) {
   console.log(
     "[Dashboard Auth] System started."
   );
 
-  setInterval(async () => {
-    try {
-      const snapshot =
-        await db
-          .collection(
-            REQUEST_COLLECTION
-          )
-          .where(
-            "status",
-            "==",
-            "pending"
-          )
-          .limit(10)
-          .get();
+  pollAuthRequests(client);
+  pollDashboardActions(client);
 
-      if (snapshot.empty) {
-        return;
-      }
+  setInterval(
+    () => pollAuthRequests(client),
+    CODE_REQUEST_INTERVAL
+  );
 
-      for (
-        const doc of snapshot.docs
-      ) {
-        await processDashboardAuthRequest(
-          client,
-          doc
-        );
-      }
-    } catch (error) {
-      console.error(
-        "[Dashboard Auth] Firebase polling error:",
-        error.message
-      );
-    }
-  }, 3000);
-
-  setInterval(async () => {
-    try {
-      const snapshot =
-        await db
-          .collection(
-            ACTION_COLLECTION
-          )
-          .where(
-            "status",
-            "==",
-            "pending"
-          )
-          .limit(10)
-          .get();
-
-      if (snapshot.empty) {
-        return;
-      }
-
-      for (
-        const doc of snapshot.docs
-      ) {
-        await executeDashboardAction(
-          client,
-          doc
-        );
-      }
-    } catch (error) {
-      console.error(
-        "[Dashboard Actions] Firebase polling error:",
-        error.message
-      );
-    }
-  }, 3000);
+  setInterval(
+    () => pollDashboardActions(client),
+    ACTION_INTERVAL
+  );
 
   console.log(
     "[Dashboard Actions] Moderation action processor started."
