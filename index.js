@@ -411,7 +411,7 @@ if (command === "testembed") {
   await sendLog(message.guild, options);
 }
 
-    if (command === "purge") {
+    if (["purge", "c"].includes(command)) {
       if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
         return message.reply(
           cardReply(COLORS.RED, "You need the **Manage Messages** permission.")
