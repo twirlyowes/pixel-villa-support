@@ -3,7 +3,7 @@ const {
   ContainerBuilder,
   TextDisplayBuilder,
   SeparatorBuilder,
-  MessageFlags
+  MessageFlags,
   GatewayIntentBits,
   EmbedBuilder,
   PermissionsBitField,
