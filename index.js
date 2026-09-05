@@ -1,4 +1,8 @@
 const {
+  ContainerBuilder,
+  TextDisplayBuilder,
+  SeparatorBuilder,
+  MessageFlags
   Client,
   GatewayIntentBits,
   EmbedBuilder,
