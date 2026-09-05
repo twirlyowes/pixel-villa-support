@@ -528,12 +528,14 @@ require("./warn")(client, {
 console.log("Loading activetime...");
 require("./activetime")(client);
 
+const { startDashboardAuth } = require("./dashboardAuth");
+
 console.log("Loading afk...");
 require("./afk")(client);
 
 console.log("About to login...");
 console.log("Token exists:", !!config.TOKEN);
-
+startDashboardAuth(client);
 client.login(config.TOKEN)
   .then(() => console.log("✅ Login successful"))
   .catch(err => console.error("❌ Login failed:", err));
