@@ -1,7 +1,17 @@
-const { EmbedBuilder } = require("discord.js");
+
+const {
+    ContainerBuilder,
+    TextDisplayBuilder,
+    SeparatorBuilder,
+    MessageFlags
+} = require("discord.js");
+
 const db = require("./firebase");
 
 let afkData = new Map();
+
+const SKY_BLUE = 0x38BDF8;
+const SUCCESS_GREEN = 0x57F287;
 
 async function loadAFK() {
     try {
@@ -37,12 +47,15 @@ async function removeAFK(userId) {
 
 function formatDuration(ms) {
     const seconds = Math.floor(ms / 1000);
+
     if (seconds < 60) return `${seconds}s`;
+
     const days = Math.floor(seconds / 86400);
     const hours = Math.floor((seconds % 86400) / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
 
     let parts = [];
+
     if (days) parts.push(`${days}d`);
     if (hours) parts.push(`${hours}h`);
     if (minutes) parts.push(`${minutes}m`);
@@ -66,14 +79,20 @@ async function applyAfkNickname(member) {
         if (baseName.startsWith(AFK_PREFIX)) return originalNickname;
 
         let newNick = `${AFK_PREFIX}${baseName}`;
+
         if (newNick.length > 32) {
             newNick = newNick.slice(0, 32);
         }
 
         await member.setNickname(newNick);
+
         return originalNickname;
     } catch (error) {
-        console.error(`❌ Failed setting AFK nickname for ${member.id}:`, error && error.message ? error.message : error);
+        console.error(
+            `❌ Failed setting AFK nickname for ${member.id}:`,
+            error && error.message ? error.message : error
+        );
+
         return null;
     }
 }
@@ -85,8 +104,36 @@ async function restoreNickname(member, originalNickname) {
     try {
         await member.setNickname(originalNickname);
     } catch (error) {
-        console.error(`❌ Failed restoring nickname for ${member.id}:`, error && error.message ? error.message : error);
+        console.error(
+            `❌ Failed restoring nickname for ${member.id}:`,
+            error && error.message ? error.message : error
+        );
     }
+}
+
+/* ---------------------------------------------------------
+   COMPONENTS V2 CARD BUILDER
+--------------------------------------------------------- */
+
+function createAFKCard(color, content) {
+    const container = new ContainerBuilder()
+        .setAccentColor(color);
+
+    const sections = content.split("\n---SEPARATOR---\n");
+
+    sections.forEach((section, index) => {
+        container.addTextDisplayComponents(
+            new TextDisplayBuilder().setContent(section)
+        );
+
+        if (index < sections.length - 1) {
+            container.addSeparatorComponents(
+                new SeparatorBuilder()
+            );
+        }
+    });
+
+    return container;
 }
 
 module.exports = (client) => {
@@ -95,8 +142,13 @@ module.exports = (client) => {
     client.on("messageCreate", async (message) => {
         try {
             if (message.author.bot || !message.guild) return;
+
             const content = message.content.trim();
             const lowerContent = content.toLowerCase();
+
+            /* ---------------------------------------------------------
+               AFK MENTION CHECK
+            --------------------------------------------------------- */
 
             if (message.mentions.users.size > 0) {
                 const mentions = [];
@@ -120,54 +172,55 @@ module.exports = (client) => {
                 });
 
                 if (mentions.length > 0) {
-                    const embed = new EmbedBuilder()
-                        .setColor("#F1C40F")
-                        .setAuthor({
-                            name: "Pixel Villa Support • AFK",
-                            iconURL: client.user.displayAvatarURL()
-                        })
-                        .setDescription(
+                    const card = createAFKCard(
+                        SKY_BLUE,
 `${mentions.join("\n\n")}
-
 <a:sparkles:1532986077651140620> Hope they get back to you soon!`
-                        )
-                        .setTimestamp();
+                    );
 
                     return message.channel.send({
-                        embeds: [embed]
+                        components: [card],
+                        flags: MessageFlags.IsComponentsV2
                     });
                 }
             }
 
-            if (lowerContent === "afk" || lowerContent.startsWith("afk ")) {
-                const reason = content.slice(3).trim() || "No reason provided";
-                const time = Date.now();
+            /* ---------------------------------------------------------
+               ENABLE AFK
+            --------------------------------------------------------- */
 
+            if (lowerContent === "afk" || lowerContent.startsWith("afk ")) {
+                const reason =
+                    content.slice(3).trim() || "No reason provided";
+
+                const time = Date.now();
                 const member = message.member;
-                const originalNickname = await applyAfkNickname(member);
+
+                const originalNickname =
+                    await applyAfkNickname(member);
 
                 afkData.set(message.author.id, {
                     reason,
                     time,
                     setupAt: time,
-                    originalNickname: originalNickname === undefined ? null : originalNickname
+                    originalNickname:
+                        originalNickname === undefined
+                            ? null
+                            : originalNickname
                 });
 
                 await saveAFK(message.author.id, {
                     reason,
                     time,
                     setupAt: time,
-                    originalNickname: originalNickname === undefined ? null : originalNickname
+                    originalNickname:
+                        originalNickname === undefined
+                            ? null
+                            : originalNickname
                 });
 
-                const embed = new EmbedBuilder()
-                    .setColor("#F1C40F")
-                    .setAuthor({
-                        name: message.author.username,
-                        iconURL: message.author.displayAvatarURL({ dynamic: true })
-                    })
-                    .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
-                    .setDescription(
+                const card = createAFKCard(
+                    SKY_BLUE,
 `<a:Moon:1532988257338527835> **AFK Enabled**
 
 Your AFK status has been enabled successfully.
@@ -179,32 +232,36 @@ Your AFK status has been enabled successfully.
 > ${formatTime(time)}
 
 <a:sparkles:1532986077651140620> Hope you have a great time away!`
-                    )
-                    .setTimestamp();
+                );
 
                 return message.channel.send({
-                    embeds: [embed]
+                    components: [card],
+                    flags: MessageFlags.IsComponentsV2
                 });
             }
+
+            /* ---------------------------------------------------------
+               REMOVE AFK / WELCOME BACK
+            --------------------------------------------------------- */
 
             if (afkData.has(message.author.id)) {
                 const data = afkData.get(message.author.id);
 
                 if (Date.now() - data.setupAt > 2000) {
-                    const duration = formatDuration(Date.now() - data.time);
+                    const duration =
+                        formatDuration(Date.now() - data.time);
 
                     afkData.delete(message.author.id);
-                    await removeAFK(message.author.id);
-                    await restoreNickname(message.member, data.originalNickname);
 
-                    const embed = new EmbedBuilder()
-                        .setColor("#57F287")
-                        .setAuthor({
-                            name: message.author.username,
-                            iconURL: message.author.displayAvatarURL({ dynamic: true })
-                        })
-                        .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
-                        .setDescription(
+                    await removeAFK(message.author.id);
+
+                    await restoreNickname(
+                        message.member,
+                        data.originalNickname
+                    );
+
+                    const card = createAFKCard(
+                        SUCCESS_GREEN,
 `<a:back:1532987608542744847> **Welcome Back!**
 
 Your AFK status has been removed successfully.
@@ -213,16 +270,18 @@ Your AFK status has been removed successfully.
 > ${duration}
 
 <a:success:1532986625343099050> Welcome back to **Pixel Villa**. Hope you had a great break!`
-                        )
-                        .setTimestamp();
+                    );
+
                     return message.channel.send({
-                        embeds: [embed]
+                        components: [card],
+                        flags: MessageFlags.IsComponentsV2
                     }).then(msg => {
-                        setTimeout(() => msg.delete().catch(() => {}), 8000);
+                        setTimeout(() => {
+                            msg.delete().catch(() => {});
+                        }, 8000);
                     });
                 }
             }
-
         } catch (error) {
             console.error("AFK System Error:", error);
         }
