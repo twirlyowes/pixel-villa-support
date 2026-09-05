@@ -1,8 +1,9 @@
-
 const {
     ContainerBuilder,
     TextDisplayBuilder,
     SeparatorBuilder,
+    SectionBuilder,
+    ThumbnailBuilder,
     MessageFlags
 } = require("discord.js");
 
@@ -54,7 +55,7 @@ function formatDuration(ms) {
     const hours = Math.floor((seconds % 86400) / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
 
-    let parts = [];
+    const parts = [];
 
     if (days) parts.push(`${days}d`);
     if (hours) parts.push(`${hours}h`);
@@ -115,23 +116,26 @@ async function restoreNickname(member, originalNickname) {
    COMPONENTS V2 CARD BUILDER
 --------------------------------------------------------- */
 
-function createAFKCard(color, content) {
+function createAFKCard(color, content, avatarURL, avatarDescription = "User avatar") {
     const container = new ContainerBuilder()
         .setAccentColor(color);
 
-    const sections = content.split("\n---SEPARATOR---\n");
+    const text = new TextDisplayBuilder()
+        .setContent(content);
 
-    sections.forEach((section, index) => {
-        container.addTextDisplayComponents(
-            new TextDisplayBuilder().setContent(section)
-        );
+    if (avatarURL) {
+        const thumbnail = new ThumbnailBuilder()
+            .setURL(avatarURL)
+            .setDescription(avatarDescription);
 
-        if (index < sections.length - 1) {
-            container.addSeparatorComponents(
-                new SeparatorBuilder()
-            );
-        }
-    });
+        const section = new SectionBuilder()
+            .addTextDisplayComponents(text)
+            .setThumbnailAccessory(thumbnail);
+
+        container.addSectionComponents(section);
+    } else {
+        container.addTextDisplayComponents(text);
+    }
 
     return container;
 }
@@ -172,10 +176,20 @@ module.exports = (client) => {
                 });
 
                 if (mentions.length > 0) {
+                    const firstAFKUser = message.mentions.users.find(
+                        user => user.id !== message.author.id && afkData.has(user.id)
+                    );
+
+                    const avatarURL = firstAFKUser
+                        ? firstAFKUser.displayAvatarURL({ extension: "png", size: 128 })
+                        : null;
+
                     const card = createAFKCard(
                         SKY_BLUE,
 `${mentions.join("\n\n")}
-<a:sparkles:1532986077651140620> Hope they get back to you soon!`
+<a:sparkles:1532986077651140620> Hope they get back to you soon!`,
+                        avatarURL,
+                        firstAFKUser ? `${firstAFKUser.username}'s avatar` : "AFK user avatar"
                     );
 
                     return message.channel.send({
@@ -219,6 +233,11 @@ module.exports = (client) => {
                             : originalNickname
                 });
 
+                const avatarURL = message.author.displayAvatarURL({
+                    extension: "png",
+                    size: 128
+                });
+
                 const card = createAFKCard(
                     SKY_BLUE,
 `<a:Moon:1532988257338527835> **AFK Enabled**
@@ -231,7 +250,9 @@ Your AFK status has been enabled successfully.
 <a:Clock:1532990759371018372> **Started**
 > ${formatTime(time)}
 
-<a:sparkles:1532986077651140620> Hope you have a great time away!`
+<a:sparkles:1532986077651140620> Hope you have a great time away!`,
+                    avatarURL,
+                    `${message.author.username}'s avatar`
                 );
 
                 return message.channel.send({
@@ -260,6 +281,11 @@ Your AFK status has been enabled successfully.
                         data.originalNickname
                     );
 
+                    const avatarURL = message.author.displayAvatarURL({
+                        extension: "png",
+                        size: 128
+                    });
+
                     const card = createAFKCard(
                         SUCCESS_GREEN,
 `<a:back:1532987608542744847> **Welcome Back!**
@@ -269,7 +295,9 @@ Your AFK status has been removed successfully.
 <a:Clock:1532990759371018372> **Time Away**
 > ${duration}
 
-<a:success:1532986625343099050> Welcome back to **Pixel Villa**. Hope you had a great break!`
+<a:success:1532986625343099050> Welcome back to **Pixel Villa**. Hope you had a great break!`,
+                        avatarURL,
+                        `${message.author.username}'s avatar`
                     );
 
                     return message.channel.send({
