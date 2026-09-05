@@ -17,10 +17,12 @@ const PIXEL_VILLA_GUILD_ID = "1510176142286389329";
 
 const activeSessions = new Map();
 const voiceSessions = new Map();
+
 let dailyActiveTimes = new Map();
 let dailyVoiceTimes = new Map();
 let dailyMessageCounts = new Map();
 let dailyCommandCounts = new Map();
+
 let isSaving = false;
 let savePending = false;
 
@@ -31,7 +33,17 @@ function formatHM(ms) {
     const totalMinutes = Math.floor(ms / 60000);
     const h = Math.floor(totalMinutes / 60);
     const m = totalMinutes % 60;
+
     return `${h}h ${m}m`;
+}
+
+function noPingOptions(extra = {}) {
+    return {
+        ...extra,
+        allowedMentions: {
+            parse: []
+        }
+    };
 }
 
 async function loadSavedTimes() {
@@ -64,16 +76,19 @@ async function loadSavedTimes() {
 
         console.log("✅ Active times loaded from Firebase");
     } catch (error) {
-        console.error("❌ Firebase load error:", error);
+        console.error(
+            "❌ Firebase load error:",
+            error
+        );
     }
 }
 
 async function loadLastResetDate() {
     try {
-        const doc =
-            await db.collection("meta")
-                .doc("dailyReset")
-                .get();
+        const doc = await db
+            .collection("meta")
+            .doc("dailyReset")
+            .get();
 
         if (doc.exists) {
             lastResetDate =
@@ -96,7 +111,8 @@ async function loadLastResetDate() {
 
 async function saveLastResetDate(dateStr) {
     try {
-        await db.collection("meta")
+        await db
+            .collection("meta")
             .doc("dailyReset")
             .set(
                 {
@@ -118,7 +134,8 @@ async function saveLastResetDate(dateStr) {
 
 async function saveLastReportDate(dateStr) {
     try {
-        await db.collection("meta")
+        await db
+            .collection("meta")
             .doc("dailyReset")
             .set(
                 {
@@ -150,9 +167,9 @@ async function executeSaveWithRetry() {
         ]);
 
         for (const userId of users) {
-            const ref =
-                db.collection("activetime")
-                    .doc(userId);
+            const ref = db
+                .collection("activetime")
+                .doc(userId);
 
             batch.set(
                 ref,
@@ -205,6 +222,7 @@ async function saveTimesToFileWithQueue() {
 
         if (savePending) {
             savePending = false;
+
             await saveTimesToFileWithQueue();
         }
     }
@@ -224,9 +242,9 @@ async function performDailyReset() {
         const batch = db.batch();
 
         for (const userId of allKnownIds) {
-            const ref =
-                db.collection("activetime")
-                    .doc(userId);
+            const ref = db
+                .collection("activetime")
+                .doc(userId);
 
             batch.set(
                 ref,
@@ -254,11 +272,17 @@ async function performDailyReset() {
             dailyCommandCounts.set(userId, 0);
 
             if (activeSessions.has(userId)) {
-                activeSessions.set(userId, freshNow);
+                activeSessions.set(
+                    userId,
+                    freshNow
+                );
             }
 
             if (voiceSessions.has(userId)) {
-                voiceSessions.set(userId, freshNow);
+                voiceSessions.set(
+                    userId,
+                    freshNow
+                );
             }
         }
 
@@ -277,7 +301,8 @@ async function performDailyReset() {
 
 async function removeUserRecord(userId) {
     try {
-        await db.collection("activetime")
+        await db
+            .collection("activetime")
             .doc(userId)
             .delete();
     } catch (error) {
@@ -293,6 +318,7 @@ async function removeUserRecord(userId) {
     dailyVoiceTimes.delete(userId);
     dailyMessageCounts.delete(userId);
     dailyCommandCounts.delete(userId);
+
     activeSessions.delete(userId);
     voiceSessions.delete(userId);
 }
@@ -351,7 +377,8 @@ module.exports = (client) => {
 
         setInterval(
             async () => {
-                const currentTimestamp = Date.now();
+                const currentTimestamp =
+                    Date.now();
 
                 for (
                     const [
@@ -360,13 +387,15 @@ module.exports = (client) => {
                     ] of activeSessions.entries()
                 ) {
                     const duration =
-                        currentTimestamp - startTime;
+                        currentTimestamp -
+                        startTime;
 
                     dailyActiveTimes.set(
                         userId,
                         (
-                            dailyActiveTimes.get(userId) ||
-                            0
+                            dailyActiveTimes.get(
+                                userId
+                            ) || 0
                         ) + duration
                     );
 
@@ -383,13 +412,15 @@ module.exports = (client) => {
                     ] of voiceSessions.entries()
                 ) {
                     const duration =
-                        currentTimestamp - startTime;
+                        currentTimestamp -
+                        startTime;
 
                     dailyVoiceTimes.set(
                         userId,
                         (
-                            dailyVoiceTimes.get(userId) ||
-                            0
+                            dailyVoiceTimes.get(
+                                userId
+                            ) || 0
                         ) + duration
                     );
 
@@ -459,12 +490,15 @@ module.exports = (client) => {
 
                 const reportDueOrOverdue =
                     pastReportTime &&
-                    lastReportDate !== istDateString;
+                    lastReportDate !==
+                        istDateString;
 
                 const resetDueOrOverdue =
                     pastResetTime &&
-                    lastReportDate === istDateString &&
-                    lastResetDate !== istDateString;
+                    lastReportDate ===
+                        istDateString &&
+                    lastResetDate !==
+                        istDateString;
 
                 if (
                     !reportDueOrOverdue &&
@@ -496,12 +530,14 @@ module.exports = (client) => {
 
                         console.log(
                             overdue
-                                ? `[Auto-Sender] Missed 3:00 AM IST report for ${istDateString} (bot likely restarted/was down) — sending catch-up report now...`
+                                ? `[Auto-Sender] Missed 3:00 AM IST report for ${istDateString} — sending catch-up report now...`
                                 : "[Auto-Sender] Triggering 3:00 AM IST Daily Report..."
                         );
 
                         const reportSent =
-                            await sendDailyReport(guild);
+                            await sendDailyReport(
+                                guild
+                            );
 
                         if (reportSent) {
                             await saveLastReportDate(
@@ -509,7 +545,7 @@ module.exports = (client) => {
                             );
                         } else {
                             console.error(
-                                "⚠️ [Auto-Sender] Daily report FAILED to send — reset will be retried automatically once a report send succeeds. Run .atlogs manually if this keeps happening."
+                                "⚠️ [Auto-Sender] Daily report FAILED to send."
                             );
                         }
 
@@ -522,6 +558,7 @@ module.exports = (client) => {
                         );
 
                         await performDailyReset();
+
                         await saveLastResetDate(
                             istDateString
                         );
@@ -543,7 +580,7 @@ module.exports = (client) => {
             const channel =
                 await client.channels
                     .fetch(LOG_CHANNEL_ID)
-                    .catch((fetchErr) => {
+                    .catch(fetchErr => {
                         console.error(
                             `❌ [DailyReport] channels.fetch(${LOG_CHANNEL_ID}) threw:`,
                             fetchErr &&
@@ -557,7 +594,7 @@ module.exports = (client) => {
 
             if (!channel) {
                 console.error(
-                    `❌ [DailyReport] Could not resolve log channel ${LOG_CHANNEL_ID}. Either the ID is wrong, the channel was deleted, or the bot can't see it.`
+                    `❌ [DailyReport] Could not resolve log channel ${LOG_CHANNEL_ID}.`
                 );
 
                 return false;
@@ -574,11 +611,14 @@ module.exports = (client) => {
                 dailyActiveTimes.set(
                     userId,
                     (
-                        dailyActiveTimes.get(userId) ||
-                        0
-                    ) + (
-                        now - startTime
-                    )
+                        dailyActiveTimes.get(
+                            userId
+                        ) || 0
+                    ) +
+                        (
+                            now -
+                            startTime
+                        )
                 );
 
                 activeSessions.set(
@@ -596,11 +636,14 @@ module.exports = (client) => {
                 dailyVoiceTimes.set(
                     userId,
                     (
-                        dailyVoiceTimes.get(userId) ||
-                        0
-                    ) + (
-                        now - startTime
-                    )
+                        dailyVoiceTimes.get(
+                            userId
+                        ) || 0
+                    ) +
+                        (
+                            now -
+                            startTime
+                        )
                 );
 
                 voiceSessions.set(
@@ -650,13 +693,20 @@ module.exports = (client) => {
             const sortedStaff =
                 eligible.sort((a, b) => {
                     return (
-                        dailyActiveTimes.get(b) || 0
-                    ) - (
-                        dailyActiveTimes.get(a) || 0
+                        (
+                            dailyActiveTimes.get(
+                                b
+                            ) || 0
+                        ) -
+                        (
+                            dailyActiveTimes.get(
+                                a
+                            ) || 0
+                        )
                     );
                 });
 
-            let reportLines = [];
+            const reportLines = [];
 
             if (sortedStaff.length === 0) {
                 reportLines.push(
@@ -690,9 +740,9 @@ module.exports = (client) => {
                 }
             }
 
-            const cards = [];
+     const chunks = [];
+
             let currentFieldValue = "";
-            let isFirstCard = true;
 
             for (const line of reportLines) {
                 if (
@@ -702,27 +752,10 @@ module.exports = (client) => {
                         "\n"
                     ).length > 3800
                 ) {
-                    const reportCard =
-                        createCard({
-                            color: COLORS.SKY_BLUE,
-                            content:
-                                `# 📊 ${isFirstCard
-                                    ? "Daily Staff Activity Report"
-                                    : "Daily Staff Activity Report (continued)"
-                                }\n\n${currentFieldValue}\n-# Pixel Villa Support • Activity Module`,
-                            avatarURL:
-                                client.user
-                                    .displayAvatarURL({
-                                        extension: "png",
-                                        size: 128
-                                    }),
-                            avatarDescription:
-                                "Pixel Villa Support avatar"
-                        });
+                    chunks.push(
+                        currentFieldValue
+                    );
 
-                    cards.push(reportCard);
-
-                    isFirstCard = false;
                     currentFieldValue = "";
                 }
 
@@ -730,35 +763,52 @@ module.exports = (client) => {
                     line + "\n";
             }
 
-            const finalCard =
-                createCard({
-                    color: COLORS.SKY_BLUE,
-                    content:
-                        `# 📊 ${isFirstCard
-                            ? "Daily Staff Activity Report"
-                            : "Daily Staff Activity Report (continued)"
-                        }\n\n${currentFieldValue}\n-# Pixel Villa Support • Activity Module`,
-                    avatarURL:
-                        client.user
-                            .displayAvatarURL({
+            if (currentFieldValue) {
+                chunks.push(
+                    currentFieldValue
+                );
+            }
+
+            for (
+                let i = 0;
+                i < chunks.length;
+                i++
+            ) {
+                const card =
+                    createCard({
+                        color:
+                            COLORS.SKY_BLUE,
+
+                        avatarURL:
+                            client.user.displayAvatarURL({
                                 extension: "png",
                                 size: 128
                             }),
-                    avatarDescription:
-                        "Pixel Villa Support avatar"
-                });
 
-            cards.push(finalCard);
+                        avatarDescription:
+                            "Pixel Villa Support",
 
-            for (const card of cards) {
-                await channel.send({
-                    components: [card],
-                    flags: MessageFlags.IsComponentsV2
-                });
+                        content:
+                            `# 📊 ${
+                                i === 0
+                                    ? "Daily Staff Activity Report"
+                                    : "Daily Staff Activity Report (continued)"
+                            }\n\n${
+                                chunks[i]
+                            }\n-# Pixel Villa Support • Activity Module`
+                    });
+
+                await channel.send(
+                    noPingOptions({
+                        components: [card],
+                        flags:
+                            MessageFlags.IsComponentsV2
+                    })
+                );
             }
 
             console.log(
-                `✅ [DailyReport] Sent successfully to #${channel.name || channel.id} (${cards.length} card(s), ${sortedStaff.length} staff member(s)).`
+                `✅ [DailyReport] Sent successfully to #${channel.name || channel.id} (${chunks.length} card(s), ${sortedStaff.length} staff member(s)).`
             );
 
             await saveTimesToFileWithQueue();
@@ -778,7 +828,10 @@ module.exports = (client) => {
 
     client.on(
         "presenceUpdate",
-        async (oldPresence, newPresence) => {
+        async (
+            oldPresence,
+            newPresence
+        ) => {
             const member =
                 newPresence.member;
 
@@ -790,7 +843,8 @@ module.exports = (client) => {
                 return;
             }
 
-            const userId = member.id;
+            const userId =
+                member.id;
 
             const oldStatus =
                 oldPresence
@@ -812,7 +866,11 @@ module.exports = (client) => {
                 isNowActive &&
                 !wasActive
             ) {
-                if (!activeSessions.has(userId)) {
+                if (
+                    !activeSessions.has(
+                        userId
+                    )
+                ) {
                     activeSessions.set(
                         userId,
                         Date.now()
@@ -822,10 +880,16 @@ module.exports = (client) => {
                 !isNowActive &&
                 wasActive
             ) {
-                if (activeSessions.has(userId)) {
+                if (
+                    activeSessions.has(
+                        userId
+                    )
+                ) {
                     const duration =
                         Date.now() -
-                        activeSessions.get(userId);
+                        activeSessions.get(
+                            userId
+                        );
 
                     dailyActiveTimes.set(
                         userId,
@@ -836,7 +900,9 @@ module.exports = (client) => {
                         ) + duration
                     );
 
-                    activeSessions.delete(userId);
+                    activeSessions.delete(
+                        userId
+                    );
                 }
             }
         }
@@ -844,7 +910,10 @@ module.exports = (client) => {
 
     client.on(
         "voiceStateUpdate",
-        (oldState, newState) => {
+        (
+            oldState,
+            newState
+        ) => {
             const member =
                 newState.member ||
                 oldState.member;
@@ -857,7 +926,8 @@ module.exports = (client) => {
                 return;
             }
 
-            const userId = member.id;
+            const userId =
+                member.id;
 
             const oldChannel =
                 oldState.channelId;
@@ -869,7 +939,11 @@ module.exports = (client) => {
                 !oldChannel &&
                 newChannel
             ) {
-                if (!voiceSessions.has(userId)) {
+                if (
+                    !voiceSessions.has(
+                        userId
+                    )
+                ) {
                     voiceSessions.set(
                         userId,
                         Date.now()
@@ -879,10 +953,16 @@ module.exports = (client) => {
                 oldChannel &&
                 !newChannel
             ) {
-                if (voiceSessions.has(userId)) {
+                if (
+                    voiceSessions.has(
+                        userId
+                    )
+                ) {
                     const duration =
                         Date.now() -
-                        voiceSessions.get(userId);
+                        voiceSessions.get(
+                            userId
+                        );
 
                     dailyVoiceTimes.set(
                         userId,
@@ -893,7 +973,9 @@ module.exports = (client) => {
                         ) + duration
                     );
 
-                    voiceSessions.delete(userId);
+                    voiceSessions.delete(
+                        userId
+                    );
                 }
             }
         }
@@ -901,7 +983,7 @@ module.exports = (client) => {
 
     client.on(
         "messageCreate",
-        async (message) => {
+        async message => {
             if (
                 message.author.bot ||
                 !message.guild
@@ -936,7 +1018,9 @@ module.exports = (client) => {
                 rawContent.split(/ +/);
 
             const commandName =
-                words.shift().toLowerCase();
+                words
+                    .shift()
+                    .toLowerCase();
 
             const modCommands = [
                 ".warn",
@@ -971,7 +1055,10 @@ module.exports = (client) => {
                 );
             }
 
-            if (commandName === "atlogs") {
+            if (
+                commandName ===
+                "atlogs"
+            ) {
                 const hasAdmin =
                     message.member.permissions.has(
                         "Administrator"
@@ -986,42 +1073,44 @@ module.exports = (client) => {
                     !hasAdmin &&
                     !hasRole
                 ) {
-                    const errorCard =
+                    const card =
                         createCard({
-                            color: COLORS.RED,
+                            color:
+                                COLORS.RED,
+
                             content:
-                                `# ❌ Permission Denied\n\nYou do not have permission to use this command.`,
-                            avatarURL:
-                                getAvatarURL(
-                                    message.author
-                                ),
-                            avatarDescription:
-                                `${message.author.username}'s avatar`
+                                "❌ **Permission Denied**\nYou do not have permission to use this command."
                         });
 
-                    return message.reply({
-                        components: [errorCard],
-                        flags: MessageFlags.IsComponentsV2
-                    });
+                    return message.reply(
+                        noPingOptions({
+                            components: [
+                                card
+                            ],
+                            flags:
+                                MessageFlags.IsComponentsV2
+                        })
+                    );
                 }
 
                 const loadingCard =
                     createCard({
-                        color: COLORS.SKY_BLUE,
+                        color:
+                            COLORS.SKY_BLUE,
+
                         content:
-                            `# 📊 Activity Report\n\n🔄 Generating and sending the staff activity report now...`,
-                        avatarURL:
-                            getAvatarURL(
-                                message.author
-                            ),
-                        avatarDescription:
-                            `${message.author.username}'s avatar`
+                            "🔄 **Generating Staff Activity Report**\nPlease wait while the report is generated..."
                     });
 
-                await message.reply({
-                    components: [loadingCard],
-                    flags: MessageFlags.IsComponentsV2
-                });
+                await message.reply(
+                    noPingOptions({
+                        components: [
+                            loadingCard
+                        ],
+                        flags:
+                            MessageFlags.IsComponentsV2
+                    })
+                );
 
                 await sendDailyReport(
                     message.guild
@@ -1048,42 +1137,44 @@ module.exports = (client) => {
                     !hasAdmin &&
                     !hasRole
                 ) {
-                    const errorCard =
+                    const card =
                         createCard({
-                            color: COLORS.RED,
+                            color:
+                                COLORS.RED,
+
                             content:
-                                `# ❌ Permission Denied\n\nYou do not have permission to use this command.`,
-                            avatarURL:
-                                getAvatarURL(
-                                    message.author
-                                ),
-                            avatarDescription:
-                                `${message.author.username}'s avatar`
+                                "❌ **Permission Denied**\nYou do not have permission to use this command."
                         });
 
-                    return message.reply({
-                        components: [errorCard],
-                        flags: MessageFlags.IsComponentsV2
-                    });
+                    return message.reply(
+                        noPingOptions({
+                            components: [
+                                card
+                            ],
+                            flags:
+                                MessageFlags.IsComponentsV2
+                        })
+                    );
                 }
 
                 const loadingCard =
                     createCard({
-                        color: COLORS.SKY_BLUE,
+                        color:
+                            COLORS.SKY_BLUE,
+
                         content:
-                            `# 🔄 Resetting Activity\n\nForce-resetting activity tracking now.\n\nA snapshot report will be generated first.`,
-                        avatarURL:
-                            getAvatarURL(
-                                message.author
-                            ),
-                        avatarDescription:
-                            `${message.author.username}'s avatar`
+                            "🔄 **Resetting Activity Tracking**\nSending the current activity snapshot before resetting..."
                     });
 
-                await message.reply({
-                    components: [loadingCard],
-                    flags: MessageFlags.IsComponentsV2
-                });
+                await message.reply(
+                    noPingOptions({
+                        components: [
+                            loadingCard
+                        ],
+                        flags:
+                            MessageFlags.IsComponentsV2
+                    })
+                );
 
                 await sendDailyReport(
                     message.guild
@@ -1119,21 +1210,22 @@ module.exports = (client) => {
 
                 const successCard =
                     createCard({
-                        color: COLORS.GREEN,
+                        color:
+                            COLORS.GREEN,
+
                         content:
-                            `# ✅ Activity Tracking Reset\n\nActivity tracking has been reset successfully.\n\nFresh tracking starts now.`,
-                        avatarURL:
-                            getAvatarURL(
-                                message.author
-                            ),
-                        avatarDescription:
-                            `${message.author.username}'s avatar`
+                            "✅ **Activity Tracking Reset**\nActivity tracking has been reset. Fresh tracking starts now."
                     });
 
-                await message.channel.send({
-                    components: [successCard],
-                    flags: MessageFlags.IsComponentsV2
-                });
+                await message.channel.send(
+                    noPingOptions({
+                        components: [
+                            successCard
+                        ],
+                        flags:
+                            MessageFlags.IsComponentsV2
+                    })
+                );
 
                 return;
             }
@@ -1156,23 +1248,24 @@ module.exports = (client) => {
                     !hasAdmin &&
                     !hasRole
                 ) {
-                    const errorCard =
+                    const card =
                         createCard({
-                            color: COLORS.RED,
+                            color:
+                                COLORS.RED,
+
                             content:
-                                `# ❌ Permission Denied\n\nYou do not have permission to use this command.`,
-                            avatarURL:
-                                getAvatarURL(
-                                    message.author
-                                ),
-                            avatarDescription:
-                                `${message.author.username}'s avatar`
+                                "❌ **Permission Denied**\nYou do not have permission to use this command."
                         });
 
-                    return message.reply({
-                        components: [errorCard],
-                        flags: MessageFlags.IsComponentsV2
-                    });
+                    return message.reply(
+                        noPingOptions({
+                            components: [
+                                card
+                            ],
+                            flags:
+                                MessageFlags.IsComponentsV2
+                        })
+                    );
                 }
 
                 const targetId =
@@ -1188,23 +1281,24 @@ module.exports = (client) => {
                         targetId
                     )
                 ) {
-                    const errorCard =
+                    const card =
                         createCard({
-                            color: COLORS.RED,
+                            color:
+                                COLORS.RED,
+
                             content:
-                                `# ❌ Invalid User ID\n\nUsage: \`.removeuser <userID>\`\n\nProvide a valid Discord user ID or mention the user.`,
-                            avatarURL:
-                                getAvatarURL(
-                                    message.author
-                                ),
-                            avatarDescription:
-                                `${message.author.username}'s avatar`
+                                "❌ **Invalid User ID**\nUsage: `.removeuser <userID>` — provide a valid Discord user ID or mention."
                         });
 
-                    return message.reply({
-                        components: [errorCard],
-                        flags: MessageFlags.IsComponentsV2
-                    });
+                    return message.reply(
+                        noPingOptions({
+                            components: [
+                                card
+                            ],
+                            flags:
+                                MessageFlags.IsComponentsV2
+                        })
+                    );
                 }
 
                 try {
@@ -1216,41 +1310,43 @@ module.exports = (client) => {
                         `✅ [RemoveUser] ${message.author.tag} removed activetime record for ${targetId}.`
                     );
 
-                    const successCard =
+                    const card =
                         createCard({
-                            color: COLORS.GREEN,
+                            color:
+                                COLORS.GREEN,
+
                             content:
-                                `# ✅ Record Removed\n\nRemoved the activity record for \`${targetId}\`.`,
-                            avatarURL:
-                                getAvatarURL(
-                                    message.author
-                                ),
-                            avatarDescription:
-                                `${message.author.username}'s avatar`
+                                `✅ **Activity Record Removed**\nRemoved activetime record for \`${targetId}\`.`
                         });
 
-                    return message.reply({
-                        components: [successCard],
-                        flags: MessageFlags.IsComponentsV2
-                    });
+                    return message.reply(
+                        noPingOptions({
+                            components: [
+                                card
+                            ],
+                            flags:
+                                MessageFlags.IsComponentsV2
+                        })
+                    );
                 } catch (err) {
-                    const errorCard =
+                    const card =
                         createCard({
-                            color: COLORS.RED,
+                            color:
+                                COLORS.RED,
+
                             content:
-                                `# ❌ Removal Failed\n\nFailed to remove the activity record for \`${targetId}\`.\n\nCheck the bot logs for more information.`,
-                            avatarURL:
-                                getAvatarURL(
-                                    message.author
-                                ),
-                            avatarDescription:
-                                `${message.author.username}'s avatar`
+                                `❌ **Removal Failed**\nFailed to remove the record for \`${targetId}\`. Check the logs.`
                         });
 
-                    return message.reply({
-                        components: [errorCard],
-                        flags: MessageFlags.IsComponentsV2
-                    });
+                    return message.reply(
+                        noPingOptions({
+                            components: [
+                                card
+                            ],
+                            flags:
+                                MessageFlags.IsComponentsV2
+                        })
+                    );
                 }
             }
 
@@ -1275,13 +1371,17 @@ module.exports = (client) => {
                             m =>
                                 m.user.username
                                     .toLowerCase()
-                                    .includes(query) ||
+                                    .includes(
+                                        query
+                                    ) ||
                                 (
                                     m.nickname &&
                                     m.nickname
                                         .toLowerCase()
-                                        .includes(query)
-                                )
+                                        .includes(
+                                            query
+                                        )
+                                    )
                         );
                 }
 
@@ -1291,25 +1391,28 @@ module.exports = (client) => {
                 }
 
                 if (
-                    !isStaff(targetMember)
+                    !isStaff(
+                        targetMember
+                    )
                 ) {
-                    const errorCard =
+                    const card =
                         createCard({
-                            color: COLORS.RED,
+                            color:
+                                COLORS.RED,
+
                             content:
-                                `# ❌ Not A Staff Member\n\nThat user is not a staff member or does not have the specified staff role.`,
-                            avatarURL:
-                                getAvatarURL(
-                                    message.author
-                                ),
-                            avatarDescription:
-                                `${message.author.username}'s avatar`
+                                "❌ **Not a Staff Member**\nThat user is not a staff member or does not have the specified staff role."
                         });
 
-                    return message.reply({
-                        components: [errorCard],
-                        flags: MessageFlags.IsComponentsV2
-                    });
+                    return message.reply(
+                        noPingOptions({
+                            components: [
+                                card
+                            ],
+                            flags:
+                                MessageFlags.IsComponentsV2
+                        })
+                    );
                 }
 
                 const userId =
@@ -1329,214 +1432,99 @@ module.exports = (client) => {
                     )
                 ) {
                     totalActive +=
-                        now -
-                        activeSessions.get(
-                            userId
-                        );
- if (
-                    activeSessions.has(
-                        userId
-                    )
-                ) {
-                    totalActive +=
-                        now -
-                        activeSessions.get(
-                            userId
-                        );
-                } else if (
-                    targetMember.presence &&
-                    targetMember.presence.status !==
-                        "offline"
-                ) {
-                    activeSessions.set(
-                        userId,
-                        now
-                    );
-                }
-
-                let totalVoice =
-                    dailyVoiceTimes.get(
-                        userId
-                    ) || 0;
-
-                if (
-                    voiceSessions.has(
-                        userId
-                    )
-                ) {
-                    totalVoice +=
-                        now -
-                        voiceSessions.get(
-                            userId
-                        );
-                } else if (
-                    targetMember.voice &&
-                    targetMember.voice.channel
-                ) {
-                    voiceSessions.set(
-                        userId,
-                        now
-                    );
-                }
-
-                const messages =
-                    dailyMessageCounts.get(
-                        userId
-                    ) || 0;
-
-                const commands =
-                    dailyCommandCounts.get(
-                        userId
-                    ) || 0;
-
-                const status =
-                    targetMember.presence
-                        ? targetMember.presence.status
-                        : "offline";
-
-                let statusFormatted =
-                    "<a:error:1532986765105696778> Offline";
-
-                if (
-                    status === "online"
-                ) {
-                    statusFormatted =
-                        "<a:ONLINE:1532986890519711815> Online";
-                } else if (
-                    status === "idle"
-                ) {
-                    statusFormatted =
-                        "<a:Moon:1532988257338527835> Idle";
-                } else if (
-                    status === "dnd"
-                ) {
-                    statusFormatted =
-                        "<a:error:1532986765105696778> Do Not Disturb";
-                }
-
-                const activityCard =
-                    createCard({
-                        color: COLORS.SKY_BLUE,
-                        content:
-`# 📊 Activity Tracker
-
-<:Shield_2:1532989398642327594> **${targetMember}**
-
-<a:Clock:1532990759371018372> **Online**
-${formatHM(totalActive)}
-
-<a:voice:1532987137199440003> **Voice**
-${formatHM(totalVoice)}
-
-<:Stats:1532990723408793661> **Commands**
-${commands}
-
-<a:LP_Message:1532991009066324049> **Messages**
-${messages}
-
-${statusFormatted}
-
--# Pixel Villa Support • Activity Module`,
-                        avatarURL:
-                            getAvatarURL(
-                                targetMember
-                            ),
-                        avatarDescription:
-                            `${targetMember.user.username}'s avatar`
-                    });
-
-                return message.reply({
-                    components: [activityCard],
-                    flags: MessageFlags.IsComponentsV2
-                });
-            }
-        }
-    });
-};
-
-let shuttingDown = false;
-
-async function handleShutdown(signal) {
-    if (shuttingDown) return;
-
-    shuttingDown = true;
-
-    console.log(
-        `🛑 Received ${signal}. Saving active times before shutdown...`
-    );
-
-    try {
-        const now = Date.now();
-
-        for (
-            const [
-                userId,
-                startTime
-            ] of activeSessions.entries()
-        ) {
-            const duration =
-                now - startTime;
-
-            dailyActiveTimes.set(
-                userId,
-                (
-                    dailyActiveTimes.get(
-                        userId
-                    ) || 0
-                ) + duration
-            );
-
-            activeSessions.set(
-                userId,
-                now
-            );
-        }
-
-        for (
-            const [
-                userId,
-                startTime
-            ] of voiceSessions.entries()
-        ) {
-            const duration =
-                now - startTime;
-
-            dailyVoiceTimes.set(
-                userId,
-                (
-                    dailyVoiceTimes.get(
-                        userId
-                    ) || 0
-                ) + duration
-            );
-
-            voiceSessions.set(
-                userId,
-                now
-            );
-        }
-
-        await saveTimesToFileWithQueue();
-
-        console.log(
-            "✅ Active times saved successfully."
-        );
-    } catch (err) {
-        console.error(
-            "❌ Failed to save active times during shutdown:",
-            err
-        );
-    }
-
-    process.exit(0);
+now -
+activeSessions.get(
+userId
+);
+} else if (
+targetMember.presence &&
+targetMember.presence.status !==
+"offline"
+) {
+activeSessions.set(
+userId,
+now
+);
 }
 
-process.on(
-    "SIGINT",
-    () => handleShutdown("SIGINT")
+let totalVoice =
+dailyVoiceTimes.get(
+userId
+) || 0;
+
+if (
+voiceSessions.has(
+userId
+)
+) {
+totalVoice +=
+now -
+voiceSessions.get(
+userId
+);
+} else if (
+targetMember.voice &&
+targetMember.voice.channel
+) {
+voiceSessions.set(
+userId,
+now
+);
+}
+
+const messages =
+dailyMessageCounts.get(
+userId
+) || 0;
+
+const commands =
+dailyCommandCounts.get(
+userId
+) || 0;
+
+const status =
+targetMember.presence
+? targetMember.presence.status
+: "offline";
+
+let statusFormatted =
+"<a:error:1532986765105696778> Offline";
+
+if (status === "online") {
+statusFormatted =
+"<a:ONLINE:1532986890519711815> Online";
+} else if (status === "idle") {
+statusFormatted =
+"<a:Moon:1532988257338527835> Idle";
+} else if (status === "dnd") {
+statusFormatted =
+"<a:error:1532986765105696778> Do Not Disturb";
+}
+
+const card = createCard({
+color: COLORS.SKY_BLUE,
+content:
+"## Pixel Villa Support • Activity Tracker\n" +
+"<:Shield_2:1532989398642327594> **${targetMember}**\n" +
+"<a:Clock:1532990759371018372> Online: **${formatHM(totalActive)}**\n" +
+"<a:voice:1532987137199440003> Voice: **${formatHM(totalVoice)}**\n" +
+"<:Stats:1532990723408793661> Commands: **${commands}**\n" +
+"<a:LP_Message:1532991009066324049> Messages: **${messages}**\n" +
+"${statusFormatted}\n" +
+"---SEPARATOR---\n" +
+"*Pixel Villa Support • Activity Module*",
+avatarURL:
+getAvatarURL(targetMember),
+avatarDescription:
+"${targetMember.user.username}'s avatar",
+separators: true
+});
+
+return message.reply(
+noPingOptions({
+components: [card],
+flags: MessageFlags.IsComponentsV2
+})
 );
 
-process.on(
-    "SIGTERM",
-    () => handleShutdown("SIGTERM")
-);
+
