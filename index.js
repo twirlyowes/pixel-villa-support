@@ -1,9 +1,9 @@
 const {
+  Client,
   ContainerBuilder,
   TextDisplayBuilder,
   SeparatorBuilder,
   MessageFlags
-  Client,
   GatewayIntentBits,
   EmbedBuilder,
   PermissionsBitField,
