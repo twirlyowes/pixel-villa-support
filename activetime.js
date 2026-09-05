@@ -1506,26 +1506,27 @@ module.exports = (client) => {
                         "<a:error:1532986765105696778> Do Not Disturb";
                 }
 
-                const card =
-                    createCard({
-                        color:
-                            COLORS.SKY_BLUE,
-                        content:
-                            `## Pixel Villa Support • Activity Tracker\n` +
-                            `**${targetMember}**\n` +
-                            `Online: **${formatHM(totalActive)}**\n` +
-                            `Voice: **${formatHM(totalVoice)}**\n` +
-                            `Commands: **${commands}**\n` +
-                            `Messages: **${messages}**\n` +
-                            `${statusFormatted}\n` +
-                            `*Pixel Villa Support • Activity Module*`,
-                        avatarURL:
-                            getAvatarURL(
-                                targetMember
-                            ),
-                        avatarDescription:
-                            `${targetMember.user.username}'s avatar`
-                    });
+                const card = createCard({
+                    color: COLORS.SKY_BLUE,
+                    content:
+                        `## Pixel Villa Support • Activity Tracker\n` +
+                        `<:Shield_2:1532989398642327594> **${targetMember}**\n` +
+                        `<a:Clock:1532990759371018372> Online: **${formatHM(totalActive)}**\n` +
+                        `<a:voice:1532987137199440003> Voice: **${formatHM(totalVoice)}**\n` +
+                        `<:Stats:1532990723408793661> Commands: **${commands}**\n` +
+                        `<a:LP_Message:1532991009066324049> Messages: **${messages}**\n` +
+                        `${statusFormatted}\n` +
+                        `*Pixel Villa Support • Activity Module*`,
+                    avatarURL: getAvatarURL(targetMember),
+                    avatarDescription: `${targetMember.user.username}'s avatar`
+                });
+
+                return message.reply(
+                    noPingOptions({
+                        components: [card],
+                        flags: MessageFlags.IsComponentsV2
+                    })
+                );
 
                 return message.reply(
                     noPingOptions({
