@@ -1,15 +1,37 @@
-const { EmbedBuilder, PermissionsBitField, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
+const {
+  PermissionsBitField,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  MessageFlags,
+  ContainerBuilder,
+  TextDisplayBuilder,
+  SeparatorBuilder,
+  SectionBuilder,
+  ThumbnailBuilder,
+  MediaGalleryBuilder,
+  MediaGalleryItemBuilder
+} = require("discord.js");
 const axios = require("axios");
+const { COLORS, createCard, getAvatarURL } = require("./lib/pixelVillaUI");
+
+// Colors used here that aren't in the shared COLORS set
+const WARNING_YELLOW = 0xFEE75C;
+const PURPLE = 0x9B59B6;
+const BLURPLE = 0x5865F2;
+const WHITE = 0xFFFFFF;
 
 module.exports = (client) => {
   const PREFIX = ".";
   const stickyCache = new Map();
 
-  function makeEmbed(color, text) {
-    return new EmbedBuilder()
-      .setColor(color)
-      .setDescription(text)
-      .setTimestamp();
+  function cardReply(color, content, avatarURL = null, avatarDescription = "Pixel Villa Support") {
+    return {
+      components: [
+        createCard({ color, content, avatarURL, avatarDescription })
+      ],
+      flags: MessageFlags.IsComponentsV2
+    };
   }
 
   client.on("messageCreate", async (message) => {
@@ -18,33 +40,23 @@ module.exports = (client) => {
     const rawContent = message.content.trim();
 
     if (rawContent.toLowerCase() === "ip") {
-        const embed = new EmbedBuilder()
-            .setColor("#5865F2")
-            .setAuthor({
-                name: "Pixel Villa Support • Server Information",
-                iconURL: client.user.displayAvatarURL()
-            })
-            .setTitle("<:HOME:1532991400503673055> Pixel Villa Server IP")
-            .setDescription(
-`<a:sparkles:1532986077651140620> **Java Edition**
-<:Link:1532991169984991302> **IP:** \`mc.pixelvilla.fun:25575\`
-
-<a:sparkles:1532986077651140620> **Bedrock Edition**
-<:Link:1532991169984991302> **IP:** \`mc.pixelvilla.fun\`
-<:terminal:1532991459005829264> **Port:** \`25575\``
-            )
-            .setFooter({
-                text: `Requested by ${message.author.tag}`,
-                iconURL: message.author.displayAvatarURL({ dynamic: true })
-            })
-            .setTimestamp();
-
         try {
-            await message.channel.send({
-                embeds: [embed]
-            });
+            await message.channel.send(
+                cardReply(
+                    COLORS.SKY_BLUE,
+                    `# <:HOME:1532991400503673055> Pixel Villa Server IP\n\n` +
+                    `<a:sparkles:1532986077651140620> **Java Edition**\n` +
+                    `<:Link:1532991169984991302> **IP:** \`mc.pixelvilla.fun:25575\`\n\n` +
+                    `<a:sparkles:1532986077651140620> **Bedrock Edition**\n` +
+                    `<:Link:1532991169984991302> **IP:** \`mc.pixelvilla.fun\`\n` +
+                    `<:terminal:1532991459005829264> **Port:** \`25575\`\n\n` +
+                    `-# Requested by ${message.author.tag}`,
+                    client.user.displayAvatarURL({ extension: "png", size: 128 }),
+                    "Pixel Villa Support"
+                )
+            );
         } catch (err) {
-            console.error("[IP Command] Failed to send embed:", err);
+            console.error("[IP Command] Failed to send card:", err);
         }
 
         return;
@@ -67,28 +79,35 @@ module.exports = (client) => {
           try {
             targetUser = await client.users.fetch(cleanedId);
           } catch (err) {
-            return message.reply({ embeds: [makeEmbed("Red", "Could not find a user with that ID or mention.")] });
+            return message.reply(cardReply(COLORS.RED, "Could not find a user with that ID or mention."));
           }
         }
 
         const avatarURL = targetUser.displayAvatarURL({ size: 4096, dynamic: true });
 
-        const embed = new EmbedBuilder()
-    .setColor(0x5865F2)
-    .setAuthor({
-        name: `${targetUser.tag}`,
-        iconURL: targetUser.displayAvatarURL({ dynamic: true })
-    })
-    .setImage(
-        targetUser.displayAvatarURL({
-            size: 4096,
-            dynamic: true
-        })
-    )
-    .setFooter({
-        text: `Requested by ${message.author.tag}`
-    })
-    .setTimestamp();
+        const container = new ContainerBuilder()
+          .setAccentColor(BLURPLE)
+          .addSectionComponents(
+            new SectionBuilder()
+              .addTextDisplayComponents(
+                new TextDisplayBuilder().setContent(
+                  `# ${targetUser.tag}'s Avatar\n-# Requested by ${message.author.tag}`
+                )
+              )
+              .setThumbnailAccessory(
+                new ThumbnailBuilder()
+                  .setURL(targetUser.displayAvatarURL({ extension: "png", size: 128 }))
+                  .setDescription(`${targetUser.tag}'s avatar`)
+              )
+          )
+          .addSeparatorComponents(new SeparatorBuilder())
+          .addMediaGalleryComponents(
+            new MediaGalleryBuilder().addItems(
+              new MediaGalleryItemBuilder()
+                .setURL(avatarURL)
+                .setDescription(`${targetUser.tag}'s avatar`)
+            )
+          );
 
         const row = new ActionRowBuilder().addComponents(
           new ButtonBuilder().setLabel("PNG Format").setStyle(ButtonStyle.Link).setURL(targetUser.displayAvatarURL({ extension: "png", size: 4096 })),
@@ -102,7 +121,10 @@ module.exports = (client) => {
           );
         }
 
-        return message.reply({ embeds: [embed], components: [row] });
+        return message.reply({
+          components: [container, row],
+          flags: MessageFlags.IsComponentsV2
+        });
       }
 
       if (command === "ui" || command === "userinfo") {
@@ -117,14 +139,12 @@ if (arg) {
     targetUser = await client.users.fetch(cleanedId, { force: true });
     targetMember = await message.guild.members.fetch(targetUser.id).catch(() => null);
   } catch {
-    return message.reply({
-      embeds: [
-        makeEmbed(
-          "Red",
-          "<a:error:1532986765105696778> Could not find a user with that ID or mention."
-        ),
-      ],
-    });
+    return message.reply(
+      cardReply(
+        COLORS.RED,
+        "<a:error:1532986765105696778> Could not find a user with that ID or mention."
+      )
+    );
   }
 }
 
@@ -204,15 +224,12 @@ const botStatus = targetUser.bot
   ? "<a:success:1532986625343099050> Yes"
   : "<a:error:1532986765105696778> No";
 
-const uiEmbed = new EmbedBuilder()
-  .setColor(color)
-  .setAuthor({
-    name: `${targetUser.tag}`,
-    iconURL: targetUser.displayAvatarURL({ dynamic: true }),
-  })
-  .setThumbnail(targetUser.displayAvatarURL({ dynamic: true, size: 4096 }))
-  .setImage(targetUser.bannerURL({ size: 4096, dynamic: true }))
-  .setDescription(
+const accentColor =
+  targetMember?.displayHexColor && targetMember.displayHexColor !== "#000000"
+    ? parseInt(targetMember.displayHexColor.replace("#", ""), 16)
+    : COLORS.SKY_BLUE;
+
+const infoText =
 `<:Stats:1532990723408793661> **User Information**
 
 **Username:** ${targetUser.username}
@@ -240,15 +257,46 @@ ${
     }
 
 **Acknowledgement**
-${acknowledgment}`
-  )
-  .setFooter({
-    text: `Requested by ${message.author.tag}`,
-    iconURL: message.author.displayAvatarURL({ dynamic: true }),
-  })
-  .setTimestamp();
+${acknowledgment}`;
 
-return message.reply({ embeds: [uiEmbed] });
+const container = new ContainerBuilder()
+  .setAccentColor(accentColor)
+  .addSectionComponents(
+    new SectionBuilder()
+      .addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(`# ${targetUser.tag}`)
+      )
+      .setThumbnailAccessory(
+        new ThumbnailBuilder()
+          .setURL(targetUser.displayAvatarURL({ extension: "png", size: 256, dynamic: true }))
+          .setDescription(`${targetUser.tag}'s avatar`)
+      )
+  )
+  .addSeparatorComponents(new SeparatorBuilder())
+  .addTextDisplayComponents(new TextDisplayBuilder().setContent(infoText));
+
+const bannerURL = targetUser.bannerURL({ size: 4096, dynamic: true });
+if (bannerURL) {
+  container
+    .addSeparatorComponents(new SeparatorBuilder())
+    .addMediaGalleryComponents(
+      new MediaGalleryBuilder().addItems(
+        new MediaGalleryItemBuilder()
+          .setURL(bannerURL)
+          .setDescription(`${targetUser.tag}'s banner`)
+      )
+    );
+}
+
+container.addSeparatorComponents(new SeparatorBuilder())
+  .addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(`-# Requested by ${message.author.tag}`)
+  );
+
+return message.reply({
+  components: [container],
+  flags: MessageFlags.IsComponentsV2
+});
       }
 
       if (command === "si" || command === "serverinfo") {
@@ -279,41 +327,87 @@ return message.reply({ embeds: [uiEmbed] });
           3: "Tier 3"
         };
 
-        const siEmbed = new EmbedBuilder()
-          .setColor("Purple")
-          .setTitle(`${guild.name} - Server Information`)
-          .setThumbnail(guild.iconURL({ dynamic: true, size: 4096 }))
-          .setImage(guild.bannerURL({ size: 4096 }))
-          .addFields(
-            { name: "Server ID", value: `\`${guild.id}\``, inline: true },
-            { name: "Server Owner", value: `<@${guild.ownerId}>`, inline: true },
-            { name: "Created On", value: `<t:${Math.floor(guild.createdTimestamp / 1000)}:F> (<t:${Math.floor(guild.createdTimestamp / 1000)}:R>)`, inline: false },
-            { name: "Members", value: `Total: **${guild.memberCount}**`, inline: true },
-            { name: "Verification", value: `${verificationLevels[guild.verificationLevel]}`, inline: true },
-            { name: "Boost Status", value: `${boostTierMap[guild.premiumTier]} (${guild.premiumSubscriptionCount || 0} Boosts)`, inline: true },
-            { name: `Channels (${totalChannels})`, value: `Text: **${textChannels}** | Voice: **${voiceChannels}** | Categories: **${categoryChannels}**`, inline: false },
-            { name: "System Specs", value: `Roles: **${totalRoles}** | Emojis: **${totalEmojis}** | Stickers: **${totalStickers}**`, inline: false },
-            { name: "Features", value: guild.features.length > 0 ? `\`${guild.features.slice(0, 8).join("`, `")}\`` : "None", inline: false }
-          )
-          .setFooter({ text: `Requested by ${message.author.tag}`, iconURL: message.author.displayAvatarURL({ dynamic: true }) })
-          .setTimestamp();
+        const infoText =
+`**Server ID:** \`${guild.id}\`
+**Server Owner:** <@${guild.ownerId}>
 
-        return message.reply({ embeds: [siEmbed] });
+**Created On:** <t:${Math.floor(guild.createdTimestamp / 1000)}:F> (<t:${Math.floor(guild.createdTimestamp / 1000)}:R>)
+
+**Members:** Total: **${guild.memberCount}**
+**Verification:** ${verificationLevels[guild.verificationLevel]}
+**Boost Status:** ${boostTierMap[guild.premiumTier]} (${guild.premiumSubscriptionCount || 0} Boosts)
+
+**Channels (${totalChannels})**
+Text: **${textChannels}** | Voice: **${voiceChannels}** | Categories: **${categoryChannels}**
+
+**System Specs**
+Roles: **${totalRoles}** | Emojis: **${totalEmojis}** | Stickers: **${totalStickers}**
+
+**Features**
+${guild.features.length > 0 ? `\`${guild.features.slice(0, 8).join("\`, \`")}\`` : "None"}`;
+
+        const iconURL = guild.iconURL({ extension: "png", size: 256, dynamic: true });
+
+        const container = new ContainerBuilder().setAccentColor(PURPLE);
+
+        if (iconURL) {
+          container.addSectionComponents(
+            new SectionBuilder()
+              .addTextDisplayComponents(
+                new TextDisplayBuilder().setContent(`# ${guild.name} - Server Information`)
+              )
+              .setThumbnailAccessory(
+                new ThumbnailBuilder().setURL(iconURL).setDescription(`${guild.name} icon`)
+              )
+          );
+        } else {
+          container.addTextDisplayComponents(
+            new TextDisplayBuilder().setContent(`# ${guild.name} - Server Information`)
+          );
+        }
+
+        container
+          .addSeparatorComponents(new SeparatorBuilder())
+          .addTextDisplayComponents(new TextDisplayBuilder().setContent(infoText));
+
+        const bannerURL = guild.bannerURL({ size: 4096 });
+        if (bannerURL) {
+          container
+            .addSeparatorComponents(new SeparatorBuilder())
+            .addMediaGalleryComponents(
+              new MediaGalleryBuilder().addItems(
+                new MediaGalleryItemBuilder()
+                  .setURL(bannerURL)
+                  .setDescription(`${guild.name} banner`)
+              )
+            );
+        }
+
+        container
+          .addSeparatorComponents(new SeparatorBuilder())
+          .addTextDisplayComponents(
+            new TextDisplayBuilder().setContent(`-# Requested by ${message.author.tag}`)
+          );
+
+        return message.reply({
+          components: [container],
+          flags: MessageFlags.IsComponentsV2
+        });
       }
 
       if (firstWord === ".sticky") {
         if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
-          return message.reply({ embeds: [makeEmbed("Red", "You need Manage Messages permission.")] });
+          return message.reply(cardReply(COLORS.RED, "You need Manage Messages permission."));
         }
 
         const stickyText = words.join(" ");
         if (!stickyText) {
-          return message.reply({ embeds: [makeEmbed("Red", `Usage:\n${PREFIX}sticky [message]\n${PREFIX}sticky off`)] });
+          return message.reply(cardReply(COLORS.RED, `Usage:\n${PREFIX}sticky [message]\n${PREFIX}sticky off`));
         }
 
         if (stickyText.toLowerCase() === "off") {
           stickyCache.delete(message.channel.id);
-          return message.reply({ embeds: [makeEmbed("Green", "Sticky message removed.")] });
+          return message.reply(cardReply(COLORS.GREEN, "Sticky message removed."));
         }
 
         stickyCache.set(message.channel.id, {
@@ -324,33 +418,35 @@ return message.reply({ embeds: [uiEmbed] });
 
         await message.delete().catch(() => {});
 
-        const embed = new EmbedBuilder()
-          .setColor("Blurple")
-          .setDescription(`Notice\n\n${stickyText}`)
-          .setFooter({ text: "Pinned Message" });
-
-        const msg = await message.channel.send({ embeds: [embed] });
+        const msg = await message.channel.send(
+          cardReply(BLURPLE, `**Notice**\n\n${stickyText}\n\n-# Pinned Message`)
+        );
         stickyCache.get(message.channel.id).lastMessageId = msg.id;
         return;
       }
 
       if (firstWord === ".dm") {
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-          return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("❌ You need Administrator permissions to use this command.")] });
+          return message.reply(cardReply(COLORS.RED, "❌ You need Administrator permissions to use this command."));
         }
         
         const targetUser = message.mentions.users.first() || message.guild.members.cache.get(words[0])?.user;
         const dmMessage = words.slice(1).join(" ");
 
         if (!targetUser || !dmMessage) {
-          return message.reply({ embeds: [new EmbedBuilder().setColor("Yellow").setDescription("⚠️ Usage: `.dm @user [message]`")] });
+          return message.reply(cardReply(WARNING_YELLOW, "⚠️ Usage: `.dm @user [message]`"));
         }
 
         try {
-          await targetUser.send({ embeds: [new EmbedBuilder().setColor("#5865F2").setTitle("Direct Message").setDescription(dmMessage).setFooter({ text: `Sent from ${message.guild.name}` }).setTimestamp()] });
-          await message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription(`✅ Successfully sent a DM to **${targetUser.tag}**.`)] });
+          await targetUser.send(
+            cardReply(
+              BLURPLE,
+              `# Direct Message\n\n${dmMessage}\n\n-# Sent from ${message.guild.name}`
+            )
+          );
+          await message.reply(cardReply(COLORS.GREEN, `✅ Successfully sent a DM to **${targetUser.tag}**.`));
         } catch (err) {
-          await message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("❌ Could not send a DM to that user. They might have DMs disabled.")] });
+          await message.reply(cardReply(COLORS.RED, "❌ Could not send a DM to that user. They might have DMs disabled."));
         }
         return;
       }
@@ -362,20 +458,20 @@ return message.reply({ embeds: [uiEmbed] });
         const hours = Math.floor((uptimeSec % 86400) / 3600);
         const minutes = Math.floor((uptimeSec % 3600) / 60);
 
-        const embed = new EmbedBuilder()
-          .setColor("#5865F2")
-          .setTitle("🤖 Bot Information")
-          .addFields(
-            { name: "Bot Name", value: client.user.username, inline: true },
-            { name: "Servers", value: `${client.guilds.cache.size}`, inline: true },
-            { name: "Total Users", value: `${totalMembers}`, inline: true },
-            { name: "Ping", value: `${client.ws.ping}ms`, inline: true },
-            { name: "Uptime", value: `${days}d ${hours}h ${minutes}m`, inline: true },
-            { name: "Node.js", value: process.version, inline: true }
+        return message.reply(
+          cardReply(
+            BLURPLE,
+            `# 🤖 Bot Information\n\n` +
+            `**Bot Name**\n${client.user.username}\n\n` +
+            `**Servers**\n${client.guilds.cache.size}\n\n` +
+            `**Total Users**\n${totalMembers}\n\n` +
+            `**Ping**\n${client.ws.ping}ms\n\n` +
+            `**Uptime**\n${days}d ${hours}h ${minutes}m\n\n` +
+            `**Node.js**\n${process.version}`,
+            client.user.displayAvatarURL({ extension: "png", size: 128 }),
+            "Pixel Villa Support"
           )
-          .setTimestamp();
-
-        return message.reply({ embeds: [embed] });
+        );
       }
 
       if (command === "wiki") {
@@ -399,18 +495,36 @@ return message.reply({ embeds: [uiEmbed] });
           const res = await axios.get(summaryUrl, { headers });
           const data = res.data;
 
-          const embed = new EmbedBuilder()
-            .setColor("#FFFFFF")
-            .setTitle(data.title || pageTitle)
-            .setURL(data.content_urls?.desktop?.page || `https://en.wikipedia.org/wiki/${encodeURIComponent(pageTitle)}`)
-            .setDescription(data.extract || "No summary available.")
-            .setFooter({ text: "Provided by Wikipedia" });
+          const pageURL = data.content_urls?.desktop?.page || `https://en.wikipedia.org/wiki/${encodeURIComponent(pageTitle)}`;
+
+          const headerText = new TextDisplayBuilder().setContent(
+            `# [${data.title || pageTitle}](${pageURL})\n\n${data.extract || "No summary available."}`
+          );
+
+          const container = new ContainerBuilder().setAccentColor(WHITE);
 
           if (data.thumbnail?.source) {
-            embed.setThumbnail(data.thumbnail.source);
+            container.addSectionComponents(
+              new SectionBuilder()
+                .addTextDisplayComponents(headerText)
+                .setThumbnailAccessory(
+                  new ThumbnailBuilder()
+                    .setURL(data.thumbnail.source)
+                    .setDescription(data.title || pageTitle)
+                )
+            );
+          } else {
+            container.addTextDisplayComponents(headerText);
           }
 
-          return message.reply({ embeds: [embed] });
+          container
+            .addSeparatorComponents(new SeparatorBuilder())
+            .addTextDisplayComponents(new TextDisplayBuilder().setContent("-# Provided by Wikipedia"));
+
+          return message.reply({
+            components: [container],
+            flags: MessageFlags.IsComponentsV2
+          });
         } catch (err) {
           return message.reply("❌ An error occurred while searching Wikipedia.");
         }
@@ -418,13 +532,9 @@ return message.reply({ embeds: [uiEmbed] });
 
       if (firstWord === ".hide") {
   if (!message.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
-    return message.reply({
-      embeds: [
-        new EmbedBuilder()
-          .setColor("#ED4245")
-          .setDescription("<a:error:1532986765105696778> You need the **Manage Channels** permission to use this command.")
-      ]
-    });
+    return message.reply(
+      cardReply(COLORS.RED, "<a:error:1532986765105696778> You need the **Manage Channels** permission to use this command.")
+    );
   }
 
   try {
@@ -433,21 +543,13 @@ return message.reply({ embeds: [uiEmbed] });
       { ViewChannel: false }
     );
 
-    await message.reply({
-      embeds: [
-        new EmbedBuilder()
-          .setColor("#57F287")
-          .setDescription("<:hide:1532336151854190743> This channel is now hidden from **@everyone**.")
-      ]
-    });
+    await message.reply(
+      cardReply(COLORS.GREEN, "<:hide:1532336151854190743> This channel is now hidden from **@everyone**.")
+    );
   } catch (err) {
-    await message.reply({
-      embeds: [
-        new EmbedBuilder()
-          .setColor("#ED4245")
-          .setDescription("<a:error:1532986765105696778> Failed to hide this channel.")
-      ]
-    });
+    await message.reply(
+      cardReply(COLORS.RED, "<a:error:1532986765105696778> Failed to hide this channel.")
+    );
   }
 
   return;
@@ -455,13 +557,9 @@ return message.reply({ embeds: [uiEmbed] });
 
      if (firstWord === ".unhide") {
   if (!message.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
-    return message.reply({
-      embeds: [
-        new EmbedBuilder()
-          .setColor("#ED4245")
-          .setDescription("<a:error:1532986765105696778> You need the **Manage Channels** permission to use this command.")
-      ]
-    });
+    return message.reply(
+      cardReply(COLORS.RED, "<a:error:1532986765105696778> You need the **Manage Channels** permission to use this command.")
+    );
   }
 
   try {
@@ -470,146 +568,79 @@ return message.reply({ embeds: [uiEmbed] });
       { ViewChannel: null }
     );
 
-    await message.reply({
-      embeds: [
-        new EmbedBuilder()
-          .setColor("#57F287")
-          .setDescription("<:unhide:1532336276164841482> This channel is now visible to **@everyone**.")
-      ]
-    });
+    await message.reply(
+      cardReply(COLORS.GREEN, "<:unhide:1532336276164841482> This channel is now visible to **@everyone**.")
+    );
   } catch (err) {
-    await message.reply({
-      embeds: [
-        new EmbedBuilder()
-          .setColor("#ED4245")
-          .setDescription("<a:error:1532986765105696778> Failed to unhide this channel.")
-      ]
-    });
+    await message.reply(
+      cardReply(COLORS.RED, "<a:error:1532986765105696778> Failed to unhide this channel.")
+    );
   }
-
   return;
        }
-
 if (firstWord === ".say") {
   if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
-    return message.reply({
-      embeds: [
-        new EmbedBuilder()
-          .setColor("#ED4245")
-          .setDescription("<a:error:1532986765105696778> You need the **Manage Messages** permission to use this command.")
-      ]
-    });
+    return message.reply(
+      cardReply(COLORS.RED, "<a:error:1532986765105696778> You need the **Manage Messages** permission to use this command.")
+    );
   }
-
   const text = words.join(" ");
-
   if (!text) {
-    return message.reply({
-      embeds: [
-        new EmbedBuilder()
-          .setColor("#FEE75C")
-          .setDescription("<a:Warning:1532986372716236932> Please provide a message for me to send.")
-      ]
-    });
+    return message.reply(
+      cardReply(WARNING_YELLOW, "<a:Warning:1532986372716236932> Please provide a message for me to send.")
+    );
   }
-
   await message.delete().catch(() => {});
-
-  const sayEmbed = new EmbedBuilder()
-    .setColor("#5865F2")
-    .setDescription(text)
-    .setTimestamp();
-
-  return message.channel.send({ embeds: [sayEmbed] });
+  return message.channel.send(cardReply(BLURPLE, text));
 }
-
 if (command === "calculate") {
   const expr = words.join("");
-
   if (!expr) {
-    return message.reply({
-      embeds: [
-        new EmbedBuilder()
-          .setColor("#FEE75C")
-          .setDescription("<a:Warning:1532986372716236932> Please provide a mathematical expression.\nExample: `calculate 5+5*2`")
-      ]
-    });
+    return message.reply(
+      cardReply(WARNING_YELLOW, "<a:Warning:1532986372716236932> Please provide a mathematical expression.\nExample: `calculate 5+5*2`")
+    );
   }
-
   if (!/^[0-9+\-*/().\s]+$/.test(expr)) {
-    return message.reply({
-      embeds: [
-        new EmbedBuilder()
-          .setColor("#ED4245")
-          .setDescription("<a:error:1532986765105696778> Invalid characters detected.\nOnly `+ - * / ( )` and numbers are allowed.")
-      ]
-    });
+    return message.reply(
+      cardReply(COLORS.RED, "<a:error:1532986765105696778> Invalid characters detected.\nOnly `+ - * / ( )` and numbers are allowed.")
+    );
   }
-
   try {
     const result = Function(`'use strict'; return (${expr})`)();
-
-    return message.reply({
-      embeds: [
-        new EmbedBuilder()
-          .setColor("#57F287")
-          .setDescription(
-`<:Stats:1532990723408793661> **Calculator**
-
-**Expression:** \`${expr}\`
-**Result:** \`${result}\``)
-          .setTimestamp()
-      ]
-    });
+    return message.reply(
+      cardReply(
+        COLORS.GREEN,
+        `<:Stats:1532990723408793661> **Calculator**\n\n**Expression:** \`${expr}\`\n**Result:** \`${result}\``
+      )
+    );
   } catch {
-    return message.reply({
-      embeds: [
-        new EmbedBuilder()
-          .setColor("#ED4245")
-          .setDescription("<a:error:1532986765105696778> Failed to evaluate the mathematical expression.")
-      ]
-    });
+    return message.reply(
+      cardReply(COLORS.RED, "<a:error:1532986765105696778> Failed to evaluate the mathematical expression.")
+    );
   }
 }
-
       const stickyData = stickyCache.get(message.channel.id);
       if (!stickyData || stickyData.lock) return;
-
       stickyData.lock = true;
-
       try {
         if (stickyData.lastMessageId) {
           const oldMsg = await message.channel.messages
             .fetch(stickyData.lastMessageId)
             .catch(() => null);
-
           if (oldMsg) {
             await oldMsg.delete().catch(() => {});
           }
         }
-
-        const embed = new EmbedBuilder()
-          .setColor("#5865F2")
-          .setDescription(
-`<a:LP_Message:1532991009066324049> **Sticky Message**
-
-${stickyData.text}`
+        const newMsg = await message.channel.send(
+          cardReply(
+            BLURPLE,
+            `<a:LP_Message:1532991009066324049> **Sticky Message**\n\n${stickyData.text}\n\n-# Pinned Message`
           )
-          .setFooter({
-            text: "Pinned Message"
-          })
-          .setTimestamp();
-
-        const newMsg = await message.channel.send({
-          embeds: [embed]
-        });
-
+        );
         stickyData.lastMessageId = newMsg.id;
-
       } finally {
         stickyData.lock = false;
       }
-
     } catch (error) {
       console.error("Misc command error:", error);
     }
