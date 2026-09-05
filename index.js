@@ -5,7 +5,6 @@ const {
   SeparatorBuilder,
   MessageFlags,
   GatewayIntentBits,
-  EmbedBuilder,
   PermissionsBitField,
   ActivityType,
   Partials,
@@ -17,6 +16,7 @@ const fs = require("fs").promises;
 const path = require("path");
 const config = require("./config.json");
 const hubCommand = require("./minigames/hub.js");
+const { COLORS, createCard, getAvatarURL } = require("./lib/pixelVillaUI");
 
 config.TOKEN = process.env.DISCORD_TOKEN;
 
@@ -139,11 +139,20 @@ async function saveWarnings(data) {
   }
 }
 
-function makeEmbed(color, text) {
-  return new EmbedBuilder()
-    .setColor(color)
-    .setDescription(text)
-    .setTimestamp();
+function makeCard(color, text, user = null) {
+  return createCard({
+    color,
+    content: text,
+    avatarURL: getAvatarURL(user),
+    avatarDescription: user ? "User avatar" : "Pixel Villa Support"
+  });
+}
+
+function cardReply(color, text, user = null) {
+  return {
+    components: [makeCard(color, text, user)],
+    flags: MessageFlags.IsComponentsV2
+  };
 }
 
 function hasModPermission(member) {
@@ -168,14 +177,14 @@ function ms(time) {
   return null;
 }
 
-async function sendLog(guild, embed) {
+async function sendLog(guild, options) {
   if (!config.LOG_CHANNEL_ID) return;
   try {
     const channel = guild.channels.cache.get(config.LOG_CHANNEL_ID) ||
                     await guild.channels.fetch(config.LOG_CHANNEL_ID).catch(() => null);
 
     if (channel && channel.isTextBased()) {
-      await channel.send({ embeds: [embed] });
+      await channel.send(options);
     }
   } catch (err) {
     console.error("Failed to send log:", err);
@@ -297,21 +306,21 @@ if (command === "testembed") {
 
     if (command === "stopgame") {
       if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
-        return message.reply({ 
-          embeds: [makeEmbed("Red", "❌ You need **Manage Messages** permissions to force-stop a game.")] 
-        });
+        return message.reply(
+          cardReply(COLORS.RED, "❌ You need **Manage Messages** permissions to force-stop a game.")
+        );
       }
 
       const gameManager = require("./minigames/utils/GameManager");
       if (gameManager.isGameRunning(message.channel.id)) {
         gameManager.deleteGame(message.channel.id);
-        return message.reply({ 
-          embeds: [makeEmbed("Green", "🛑 The active game lobby has been forcefully closed and the channel is now unlocked.")] 
-        });
+        return message.reply(
+          cardReply(COLORS.GREEN, "🛑 The active game lobby has been forcefully closed and the channel is now unlocked.")
+        );
       } else {
-        return message.reply({ 
-          embeds: [makeEmbed("Red", "ℹ️ There are no active minigames running in this channel right now.")] 
-        });
+        return message.reply(
+          cardReply(COLORS.RED, "ℹ️ There are no active minigames running in this channel right now.")
+        );
       }
     }
 
@@ -321,59 +330,60 @@ if (command === "testembed") {
       const reason = args.slice(2).join(" ") || "No reason provided";
 
       if (!user || !time || !ms(time)) {
-        return message.reply({
-          embeds: [makeEmbed("Red", `**Usage:** ${PREFIX}mute @user [time: 10m/1h] [reason]`)]
-        });
+        return message.reply(
+          cardReply(COLORS.RED, `**Usage:** ${PREFIX}mute @user [time: 10m/1h] [reason]`)
+        );
       }
 
       if (!hasModPermission(message.member)) {
-        return message.reply({
-          embeds: [makeEmbed("Red", "You need the **Moderate Members** permission.")]
-        });
+        return message.reply(
+          cardReply(COLORS.RED, "You need the **Moderate Members** permission.")
+        );
       }
 
       if (!hierarchyCheck(message, user)) {
-        return message.reply({
-          embeds: [makeEmbed("Red", "You cannot mute this user due to role hierarchy.")]
-        });
+        return message.reply(
+          cardReply(COLORS.RED, "You cannot mute this user due to role hierarchy.")
+        );
       }
 
       await user.timeout(ms(time), reason);
 
-      const embed = makeEmbed(
-        "Red",
-        `**${user.user.tag}** has been muted.\n\n**Duration:** ${time}\n**Reason:** ${reason}\n**Moderator:** ${message.author.tag}`
+      const options = cardReply(
+        COLORS.RED,
+        `**${user.user.tag}** has been muted.\n\n**Duration:** ${time}\n**Reason:** ${reason}\n**Moderator:** ${message.author.tag}`,
+        user
       );
 
-      await message.reply({ embeds: [embed] });
-      await sendLog(message.guild, embed);
+      await message.reply(options);
+      await sendLog(message.guild, options);
     }
 
     if (command === "unmute") {
   const user = message.mentions.members.first();
 
   if (!user) {
-    return message.reply({
-      embeds: [makeEmbed("Red", `**Usage:** \`${PREFIX}unmute @user\``)]
-    });
+    return message.reply(
+      cardReply(COLORS.RED, `**Usage:** \`${PREFIX}unmute @user\``)
+    );
   }
 
   if (!hasModPermission(message.member)) {
-    return message.reply({
-      embeds: [makeEmbed("Red", "You need the **Moderate Members** permission.")]
-    });
+    return message.reply(
+      cardReply(COLORS.RED, "You need the **Moderate Members** permission.")
+    );
   }
 
   if (!user.isCommunicationDisabled()) {
-    return message.reply({
-      embeds: [makeEmbed("Red", "That user is not currently muted.")]
-    });
+    return message.reply(
+      cardReply(COLORS.RED, "That user is not currently muted.")
+    );
   }
 
   if (!user.moderatable) {
-    return message.reply({
-      embeds: [makeEmbed("Red", "I can't unmute that user — their role is higher than mine.")]
-    });
+    return message.reply(
+      cardReply(COLORS.RED, "I can't unmute that user — their role is higher than mine.")
+    );
   }
 
   const wasMutedUntil = user.communicationDisabledUntilTimestamp;
@@ -382,53 +392,48 @@ if (command === "testembed") {
     await user.timeout(null, `Unmuted by ${message.author.tag}`);
   } catch (err) {
     console.error("Unmute failed:", err);
-    return message.reply({
-      embeds: [makeEmbed("Red", "Failed to unmute that user — check my role position and permissions.")]
-    });
+    return message.reply(
+      cardReply(COLORS.RED, "Failed to unmute that user — check my role position and permissions.")
+    );
   }
 
-  const embed = new EmbedBuilder()
-    .setColor("#57F287")
-    .setAuthor({
-      name: user.user.tag,
-      iconURL: user.user.displayAvatarURL()
-    })
-    .setTitle("Member Unmuted")
-    .addFields(
-      { name: "User", value: `${user}`, inline: true },
-      { name: "Moderator", value: `${message.author}`, inline: true },
-      ...(wasMutedUntil ? [{ name: "Was Muted Until", value: `<t:${Math.floor(wasMutedUntil / 1000)}:R>`, inline: true }] : [])
-    )
-    .setFooter({ text: "Pixel Villa Moderation", iconURL: message.guild.iconURL() })
-    .setTimestamp();
+  const options = cardReply(
+    COLORS.GREEN,
+    `# Member Unmuted\n\n` +
+    `**User**\n${user}\n\n` +
+    `**Moderator**\n${message.author}\n\n` +
+    (wasMutedUntil ? `**Was Muted Until**\n<t:${Math.floor(wasMutedUntil / 1000)}:R>\n\n` : "") +
+    `-# Pixel Villa Moderation`,
+    user
+  );
 
-  await message.reply({ embeds: [embed] });
-  await sendLog(message.guild, embed);
+  await message.reply(options);
+  await sendLog(message.guild, options);
 }
 
     if (command === "purge") {
       if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
-        return message.reply({
-          embeds: [makeEmbed("Red", "You need the **Manage Messages** permission.")]
-        });
+        return message.reply(
+          cardReply(COLORS.RED, "You need the **Manage Messages** permission.")
+        );
       }
 
       const amount = Number(args[0]);
       if (!amount || amount < 1 || amount > 100) {
-        return message.reply({
-          embeds: [makeEmbed("Red", "Please enter a valid amount between 1 and 100. (e.g., `purge 50`)")]
-        });
+        return message.reply(
+          cardReply(COLORS.RED, "Please enter a valid amount between 1 and 100. (e.g., `purge 50`)")
+        );
       }
 
       await message.delete().catch(() => {});
       await message.channel.bulkDelete(amount, true);
 
-      const embed = makeEmbed(
-        "Green",
+      const options = cardReply(
+        COLORS.GREEN,
         `Successfully deleted **${amount}** messages.\n\n**Moderator:** ${message.author.tag}`
       );
 
-      const successMsg = await message.channel.send({ embeds: [embed] });
+      const successMsg = await message.channel.send(options);
       setTimeout(() => successMsg.delete().catch(() => {}), 4000);
     }
 
@@ -446,29 +451,29 @@ if (command === "vcp") {
     );
 
   if (!user) {
-    return message.reply({
-      embeds: [makeEmbed("Red", "Please mention a valid user or provide part of their username/display name. (e.g., `vcp @user`, `vcp Celestial`, or `vcp cele`)")]
-    });
+    return message.reply(
+      cardReply(COLORS.RED, "Please mention a valid user or provide part of their username/display name. (e.g., `vcp @user`, `vcp Celestial`, or `vcp cele`)")
+    );
   }
 
   if (!message.member.permissions.has(PermissionsBitField.Flags.MoveMembers)) {
-    return message.reply({
-      embeds: [makeEmbed("Red", "You need the **Move Members** permission.")]
-    });
+    return message.reply(
+      cardReply(COLORS.RED, "You need the **Move Members** permission.")
+    );
   }
 
   const voiceChannel = message.member.voice.channel;
 
   if (!voiceChannel) {
-    return message.reply({
-      embeds: [makeEmbed("Red", "You must be sitting inside a voice channel to pull someone.")]
-    });
+    return message.reply(
+      cardReply(COLORS.RED, "You must be sitting inside a voice channel to pull someone.")
+    );
   }
 
   if (!user.voice.channel) {
-    return message.reply({
-      embeds: [makeEmbed("Red", "That user isn't connected to any voice channel right now.")]
-    });
+    return message.reply(
+      cardReply(COLORS.RED, "That user isn't connected to any voice channel right now.")
+    );
   }
 
   await user.voice.setChannel(
@@ -476,18 +481,19 @@ if (command === "vcp") {
     `Voice-pulled by ${message.author.tag}`
   );
 
-  const embed = makeEmbed(
-    "Green",
-    `Pulled **${user.user.tag}** into your voice channel.\n\n**Moderator:** ${message.author.tag}`
+  await message.reply(
+    cardReply(
+      COLORS.GREEN,
+      `Pulled **${user.user.tag}** into your voice channel.\n\n**Moderator:** ${message.author.tag}`,
+      user
+    )
   );
-
-  await message.reply({ embeds: [embed] });
 }
       } catch (error) {
     console.error(`Command Error Encountered (${command}):`, error);
-    message.reply({
-      embeds: [makeEmbed("Red", "Something went sideways while running that command.")]
-    }).catch(() => {});
+    message.reply(
+      cardReply(COLORS.RED, "Something went sideways while running that command.")
+    ).catch(() => {});
   }
 });
 
