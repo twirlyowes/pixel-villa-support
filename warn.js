@@ -61,7 +61,11 @@ module.exports = client => {
         if (message.author.bot || !message.guild) return;
         if (!message.content.startsWith(PREFIX)) return;
 
-        const args = message.content.slice(PREFIX.length).trim().split(/ +/);
+        const args = message.content
+            .slice(PREFIX.length)
+            .trim()
+            .split(/ +/);
+
         const command = args.shift().toLowerCase();
 
         const warnCommands = ["warn", "wlist", "wremove", "wreset"];
@@ -82,21 +86,45 @@ module.exports = client => {
         }
 
         try {
+
+            // =========================================================
+            // WARN
+            // =========================================================
+
             if (command === "warn") {
+
+                /*
+                 * IMPORTANT:
+                 * The user MUST be explicitly mentioned.
+                 *
+                 * Examples:
+                 * .warn @User spamming
+                 * .warn @User inappropriate language
+                 *
+                 * These will NOT work:
+                 * .warn
+                 * .warn spamming
+                 * Replying to a user and typing .warn
+                 */
+
                 const user = message.mentions.members.first();
-                const reason = args.slice(1).join(" ") || "No reason provided";
 
                 if (!user) {
                     return message.channel.send(
                         cardReply(
                             ERROR_RED,
                             "<a:error:1532986765105696778> Invalid Usage",
-                            `**Usage:** \`${PREFIX}warn @user [reason]\``
+                            `You must **explicitly ping the user** you want to warn.\n\n**Usage:** \`${PREFIX}warn @user [reason]\``
                         )
                     );
                 }
 
-                const userDoc = await db.collection("warnings").doc(user.id).get();
+                const reason = args.slice(1).join(" ") || "No reason provided";
+
+                const userDoc = await db
+                    .collection("warnings")
+                    .doc(user.id)
+                    .get();
 
                 const userWarnings = userDoc.exists
                     ? userDoc.data().warnings || []
@@ -117,9 +145,16 @@ module.exports = client => {
 
                 userWarnings.push(newWarning);
 
-                await db.collection("warnings").doc(user.id).set({
-                    warnings: userWarnings
-                });
+                await db
+                    .collection("warnings")
+                    .doc(user.id)
+                    .set({
+                        warnings: userWarnings
+                    });
+
+                // =====================================================
+                // DM USER
+                // =====================================================
 
                 let dmedUser = "Yes";
 
@@ -135,6 +170,10 @@ module.exports = client => {
                     dmedUser = "No (DMs Closed)";
                 }
 
+                // =====================================================
+                // FORMAT DATE
+                // =====================================================
+
                 const formattedDate = now.toLocaleString("en-US", {
                     year: "numeric",
                     month: "numeric",
@@ -144,6 +183,10 @@ module.exports = client => {
                     second: "numeric",
                     hour12: true
                 });
+
+                // =====================================================
+                // SUCCESS CARD
+                // =====================================================
 
                 const options = cardReply(
                     WARNED_GREEN,
@@ -158,6 +201,10 @@ module.exports = client => {
                 );
 
                 await message.channel.send(options);
+
+                // =====================================================
+                // STAFF LOG
+                // =====================================================
 
                 if (config.LOG_CHANNEL_ID) {
                     try {
@@ -177,7 +224,12 @@ module.exports = client => {
                 }
             }
 
+            // =========================================================
+            // WLIST
+            // =========================================================
+
             if (command === "wlist") {
+
                 const user =
                     message.mentions.members.first() || message.member;
 
@@ -189,7 +241,9 @@ module.exports = client => {
                         cardReply(
                             COLORS.GREEN,
                             "<a:success:1532986625343099050> Clean Record",
-                            `<:Shield_2:1532989398642327594> **User**\n${user}\n\n<a:Warning:1532986372716236932> **Warnings**\nNo warnings found.`
+                            `<:Shield_2:1532989398642327594> **User**\n${user}\n\n` +
+                            `<a:Warning:1532986372716236932> **Warnings**\n` +
+                            `No warnings found.`
                         )
                     );
                 }
@@ -197,11 +251,14 @@ module.exports = client => {
                 const historyBlocks = userWarns
                     .slice(-5)
                     .reverse()
-                    .map((warn, index) =>
-                        `**Warning #${userWarns.length - index} • ID: ${warn.id || "N/A"}**\n\n` +
-                        `<:Shield_2:1532989398642327594> **Moderator**\n${warn.moderator}\n\n` +
-                        `<a:LP_Message:1532991009066324049> **Reason**\n${warn.reason}\n\n` +
-                        `<a:Clock:1532990759371018372> **Date**\n<t:${Math.floor(new Date(warn.timestamp).getTime() / 1000)}:R>`
+                    .map(
+                        (warn, index) =>
+                            `**Warning #${userWarns.length - index} • ID: ${warn.id || "N/A"}**\n\n` +
+                            `<:Shield_2:1532989398642327594> **Moderator**\n${warn.moderator}\n\n` +
+                            `<a:LP_Message:1532991009066324049> **Reason**\n${warn.reason}\n\n` +
+                            `<a:Clock:1532990759371018372> **Date**\n<t:${Math.floor(
+                                new Date(warn.timestamp).getTime() / 1000
+                            )}:R>`
                     )
                     .join("\n\n");
 
@@ -209,13 +266,20 @@ module.exports = client => {
                     cardReply(
                         WARN_YELLOW,
                         "<a:Warning:1532986372716236932> Infraction History",
-                        `<:Shield_2:1532989398642327594> **User**\n${user}\n\n<:Stats:1532990723408793661> **Total Warnings**\n${userWarns.length}/5\n\n${historyBlocks}`,
+                        `<:Shield_2:1532989398642327594> **User**\n${user}\n\n` +
+                        `<:Stats:1532990723408793661> **Total Warnings**\n${userWarns.length}/5\n\n` +
+                        historyBlocks,
                         getAvatarURL(user)
                     )
                 );
             }
 
+            // =========================================================
+            // WREMOVE
+            // =========================================================
+
             if (command === "wremove") {
+
                 const user = message.mentions.members.first();
 
                 if (!user) {
@@ -235,14 +299,18 @@ module.exports = client => {
                         cardReply(
                             ERROR_RED,
                             "<a:error:1532986765105696778> Missing Warning ID",
-                            `Please provide a valid Warning ID.\n\n**Usage:** \`${PREFIX}wremove @user <warning ID>\``
+                            `Please provide a valid Warning ID.\n\n` +
+                            `**Usage:** \`${PREFIX}wremove @user <warning ID>\``
                         )
                     );
                 }
 
                 const warnings = await getWarnings();
 
-                if (!warnings[user.id] || warnings[user.id].length === 0) {
+                if (
+                    !warnings[user.id] ||
+                    warnings[user.id].length === 0
+                ) {
                     return message.channel.send(
                         cardReply(
                             ERROR_RED,
@@ -266,14 +334,23 @@ module.exports = client => {
                     );
                 }
 
-                const removed = warnings[user.id].splice(warnIndex, 1)[0];
+                const removed = warnings[user.id].splice(
+                    warnIndex,
+                    1
+                )[0];
 
                 if (warnings[user.id].length === 0) {
-                    await db.collection("warnings").doc(user.id).delete();
+                    await db
+                        .collection("warnings")
+                        .doc(user.id)
+                        .delete();
                 } else {
-                    await db.collection("warnings").doc(user.id).set({
-                        warnings: warnings[user.id]
-                    });
+                    await db
+                        .collection("warnings")
+                        .doc(user.id)
+                        .set({
+                            warnings: warnings[user.id]
+                        });
                 }
 
                 const options = cardReply(
@@ -289,6 +366,10 @@ module.exports = client => {
                 );
 
                 await message.channel.send(options);
+
+                // =====================================================
+                // STAFF LOG
+                // =====================================================
 
                 if (config.LOG_CHANNEL_ID) {
                     try {
@@ -308,7 +389,12 @@ module.exports = client => {
                 }
             }
 
+            // =========================================================
+            // WRESET
+            // =========================================================
+
             if (command === "wreset") {
+
                 const user = message.mentions.members.first();
 
                 if (!user) {
@@ -323,7 +409,10 @@ module.exports = client => {
 
                 const warnings = await getWarnings();
 
-                if (!warnings[user.id] || warnings[user.id].length === 0) {
+                if (
+                    !warnings[user.id] ||
+                    warnings[user.id].length === 0
+                ) {
                     return message.channel.send(
                         cardReply(
                             ERROR_RED,
@@ -333,7 +422,10 @@ module.exports = client => {
                     );
                 }
 
-                await db.collection("warnings").doc(user.id).delete();
+                await db
+                    .collection("warnings")
+                    .doc(user.id)
+                    .delete();
 
                 const options = cardReply(
                     COLORS.GREEN,
@@ -346,6 +438,10 @@ module.exports = client => {
                 );
 
                 await message.channel.send(options);
+
+                // =====================================================
+                // STAFF LOG
+                // =====================================================
 
                 if (config.LOG_CHANNEL_ID) {
                     try {
@@ -364,7 +460,9 @@ module.exports = client => {
                     }
                 }
             }
+
         } catch (error) {
+
             console.error(
                 "Error executing warning structure:",
                 error
