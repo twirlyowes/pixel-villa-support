@@ -789,7 +789,7 @@ module.exports = (client) => {
                             "Pixel Villa Support",
 
                         content:
-                            `# 📊 ${
+                            `# ${
                                 i === 0
                                     ? "Daily Staff Activity Report"
                                     : "Daily Staff Activity Report (continued)"
