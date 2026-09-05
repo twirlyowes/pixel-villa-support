@@ -191,7 +191,7 @@ async function sendLog(guild, options) {
   }
 }
 
-client.once("ready", async () => {
+client.once("clientReady", async () => {
   console.log(`${client.user.tag} is online and fully optimized!`);
 
   client.user.setPresence({
