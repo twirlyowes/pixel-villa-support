@@ -56,10 +56,19 @@ module.exports = (client) => {
     if (message.author.bot || !message.guild) return;
     if (!message.content.startsWith(PREFIX)) return;
 
-    const args = message.content.slice(PREFIX.length).trim().split(/ +/);
+    const args = message.content
+      .slice(PREFIX.length)
+      .trim()
+      .split(/ +/);
+
     const command = args.shift().toLowerCase();
 
     try {
+
+      // =========================================================
+      // KICK
+      // =========================================================
+
       if (command === "kick") {
         if (!message.member.roles.cache.has(config.STAFF_ROLE_ID)) {
           return message.reply(
@@ -71,9 +80,8 @@ module.exports = (client) => {
           );
         }
 
-        const user = message.mentions.members.find(m =>
-          message.content.includes(m.id)
-        );
+        // EXPLICIT @MENTION REQUIRED
+        const user = message.mentions.members.first();
 
         const reason =
           args.slice(1).join(" ") || "No reason provided";
@@ -123,6 +131,10 @@ module.exports = (client) => {
         await sendLog(message.guild, options);
       }
 
+      // =========================================================
+      // BAN
+      // =========================================================
+
       if (command === "ban") {
         if (!message.member.roles.cache.has(config.STAFF_ROLE_ID)) {
           return message.reply(
@@ -134,9 +146,8 @@ module.exports = (client) => {
           );
         }
 
-        const user = message.mentions.members.find(m =>
-          message.content.includes(m.id)
-        );
+        // EXPLICIT @MENTION REQUIRED
+        const user = message.mentions.members.first();
 
         const reason =
           args.slice(1).join(" ") || "No reason provided";
@@ -186,6 +197,10 @@ module.exports = (client) => {
         await sendLog(message.guild, options);
       }
 
+      // =========================================================
+      // NICK
+      // =========================================================
+
       if (command === "nick") {
         if (!message.member.roles.cache.has(config.STAFF_ROLE_ID)) {
           return message.reply(
@@ -197,9 +212,8 @@ module.exports = (client) => {
           );
         }
 
-        const user = message.mentions.members.find(m =>
-          message.content.includes(m.id)
-        );
+        // EXPLICIT @MENTION REQUIRED
+        const user = message.mentions.members.first();
 
         const nickname = args.slice(1).join(" ");
 
@@ -252,6 +266,10 @@ module.exports = (client) => {
         await sendLog(message.guild, options);
       }
 
+      // =========================================================
+      // PING
+      // =========================================================
+
       if (command === "ping") {
         const sent = await message.reply(
           cardReply(
@@ -278,6 +296,10 @@ module.exports = (client) => {
         );
       }
 
+      // =========================================================
+      // UPTIME
+      // =========================================================
+
       if (command === "uptime") {
         const uptime = Date.now() - startTime;
         const totalSeconds = Math.floor(uptime / 1000);
@@ -303,6 +325,10 @@ module.exports = (client) => {
           )
         );
       }
+
+      // =========================================================
+      // LOCK
+      // =========================================================
 
       if (command === "lock") {
         if (!message.member.roles.cache.has(config.STAFF_ROLE_ID)) {
@@ -336,6 +362,10 @@ module.exports = (client) => {
         await sendLog(message.guild, options);
       }
 
+      // =========================================================
+      // UNLOCK
+      // =========================================================
+
       if (command === "unlock") {
         if (!message.member.roles.cache.has(config.STAFF_ROLE_ID)) {
           return message.reply(
@@ -367,6 +397,10 @@ module.exports = (client) => {
         await message.reply(options);
         await sendLog(message.guild, options);
       }
+
+      // =========================================================
+      // UNBAN
+      // =========================================================
 
       if (command === "unban") {
         if (!message.member.roles.cache.has(config.STAFF_ROLE_ID)) {
@@ -417,6 +451,7 @@ module.exports = (client) => {
         await message.reply(options);
         await sendLog(message.guild, options);
       }
+
     } catch (error) {
       console.error(
         `Error executing moderation command (${command}):`,
