@@ -1,6 +1,12 @@
-const { EmbedBuilder } = require("discord.js");
+const { MessageFlags } = require("discord.js");
 const config = require("./config.json");
 const { db } = require("./firebase");
+const { COLORS, createCard, getAvatarURL } = require("./lib/pixelVillaUI");
+
+// Colors used here that aren't in the shared COLORS set
+const ERROR_RED = 0xE74C3C;
+const WARN_YELLOW = 0xF1C40F;
+const WARNED_GREEN = 0x43B581;
 
 async function getWarnings() {
     try {
@@ -35,19 +41,20 @@ async function saveWarnings(warnings) {
 module.exports = client => {
     const PREFIX = ".";
 
-    function makeEmbed(color, title, text) {
-        return new EmbedBuilder()
-            .setColor(color)
-            .setAuthor({
-                name: "Pixel Villa Support • Warning System",
-                iconURL: client.user.displayAvatarURL()
-            })
-            .setTitle(title)
-            .setDescription(text)
-            .setFooter({
-                text: "Pixel Villa Support • Moderation"
-            })
-            .setTimestamp();
+    function makeCard(color, title, text, avatarURL = null) {
+        return createCard({
+            color,
+            content: `# ${title}\n\n${text}\n-# Pixel Villa Support • Warning System`,
+            avatarURL,
+            avatarDescription: avatarURL ? "User avatar" : "Pixel Villa Support"
+        });
+    }
+
+    function cardReply(color, title, text, avatarURL = null) {
+        return {
+            components: [makeCard(color, title, text, avatarURL)],
+            flags: MessageFlags.IsComponentsV2
+        };
     }
 
     client.on("messageCreate", async message => {
@@ -65,15 +72,13 @@ module.exports = client => {
             !config.STAFF_ROLE_ID ||
             !message.member.roles.cache.has(config.STAFF_ROLE_ID)
         ) {
-            return message.channel.send({
-                embeds: [
-                    makeEmbed(
-                        "#E74C3C",
-                        "<a:error:1532986765105696778> Permission Denied",
-                        "You do not have permission to use this command."
-                    )
-                ]
-            });
+            return message.channel.send(
+                cardReply(
+                    ERROR_RED,
+                    "<a:error:1532986765105696778> Permission Denied",
+                    "You do not have permission to use this command."
+                )
+            );
         }
 
         try {
@@ -82,15 +87,13 @@ module.exports = client => {
                 const reason = args.slice(1).join(" ") || "No reason provided";
 
                 if (!user) {
-                    return message.channel.send({
-                        embeds: [
-                            makeEmbed(
-                                "#E74C3C",
-                                "<a:error:1532986765105696778> Invalid Usage",
-                                `**Usage:** \`${PREFIX}warn @user [reason]\``
-                            )
-                        ]
-                    });
+                    return message.channel.send(
+                        cardReply(
+                            ERROR_RED,
+                            "<a:error:1532986765105696778> Invalid Usage",
+                            `**Usage:** \`${PREFIX}warn @user [reason]\``
+                        )
+                    );
                 }
 
                 const userDoc = await db.collection("warnings").doc(user.id).get();
@@ -121,26 +124,13 @@ module.exports = client => {
                 let dmedUser = "Yes";
 
                 try {
-                    const dmEmbed = new EmbedBuilder()
-                        .setColor("#F1C40F")
-                        .setAuthor({
-                            name: "Pixel Villa Support • Warning System",
-                            iconURL: client.user.displayAvatarURL()
-                        })
-                        .setTitle(
-                            `<a:Warning:1532986372716236932> Warning Received | ${message.guild.name}`
-                        )
-                        .setDescription(
+                    await user.send(
+                        cardReply(
+                            WARN_YELLOW,
+                            `<a:Warning:1532986372716236932> Warning Received | ${message.guild.name}`,
                             `You have received a warning in **${message.guild.name}**.\n\n**Reason:** ${reason}`
                         )
-                        .setFooter({
-                            text: "Pixel Villa Support • Moderation"
-                        })
-                        .setTimestamp();
-
-                    await user.send({
-                        embeds: [dmEmbed]
-                    });
+                    );
                 } catch {
                     dmedUser = "No (DMs Closed)";
                 }
@@ -155,60 +145,19 @@ module.exports = client => {
                     hour12: true
                 });
 
-                const warnEmbed = new EmbedBuilder()
-                    .setColor("#43B581")
-                    .setAuthor({
-                        name: "Pixel Villa Support • Warning System",
-                        iconURL: client.user.displayAvatarURL()
-                    })
-                    .setThumbnail(
-                        user.user.displayAvatarURL({
-                            dynamic: true
-                        })
-                    )
-                    .setTitle(
-                        `✅ ${user.user.username} has been warned.`
-                    )
-                    .addFields(
-                        {
-                            name: "Reason",
-                            value: reason,
-                            inline: false
-                        },
-                        {
-                            name: "Warned by",
-                            value: `${message.author.username} (${message.author.id})`,
-                            inline: true
-                        },
-                        {
-                            name: "Timestamp",
-                            value: formattedDate,
-                            inline: true
-                        },
-                        {
-                            name: "Warning ID",
-                            value: warnId,
-                            inline: true
-                        },
-                        {
-                            name: "Member Notified",
-                            value: dmedUser,
-                            inline: true
-                        },
-                        {
-                            name: "Total Warnings",
-                            value: `${userWarnings.length}/5`,
-                            inline: true
-                        }
-                    )
-                    .setFooter({
-                        text: "Pixel Villa Support • Moderation"
-                    })
-                    .setTimestamp();
+                const options = cardReply(
+                    WARNED_GREEN,
+                    `✅ ${user.user.username} has been warned.`,
+                    `**Reason**\n${reason}\n\n` +
+                    `**Warned by**\n${message.author.username} (${message.author.id})\n\n` +
+                    `**Timestamp**\n${formattedDate}\n\n` +
+                    `**Warning ID**\n${warnId}\n\n` +
+                    `**Member Notified**\n${dmedUser}\n\n` +
+                    `**Total Warnings**\n${userWarnings.length}/5`,
+                    getAvatarURL(user)
+                );
 
-                await message.channel.send({
-                    embeds: [warnEmbed]
-                });
+                await message.channel.send(options);
 
                 if (config.LOG_CHANNEL_ID) {
                     try {
@@ -217,9 +166,7 @@ module.exports = client => {
                         );
 
                         if (logChannel) {
-                            await logChannel.send({
-                                embeds: [warnEmbed]
-                            });
+                            await logChannel.send(options);
                         }
                     } catch (err) {
                         console.error(
@@ -238,99 +185,71 @@ module.exports = client => {
                 const userWarns = warnings[user.id] || [];
 
                 if (userWarns.length === 0) {
-                    return message.channel.send({
-                        embeds: [
-                            makeEmbed(
-                                "#57F287",
-                                "<a:success:1532986625343099050> Clean Record",
-                                `<:Shield_2:1532989398642327594> **User**\n${user}\n\n<a:Warning:1532986372716236932> **Warnings**\nNo warnings found.`
-                            )
-                        ]
-                    });
+                    return message.channel.send(
+                        cardReply(
+                            COLORS.GREEN,
+                            "<a:success:1532986625343099050> Clean Record",
+                            `<:Shield_2:1532989398642327594> **User**\n${user}\n\n<a:Warning:1532986372716236932> **Warnings**\nNo warnings found.`
+                        )
+                    );
                 }
 
-                const embed = new EmbedBuilder()
-                    .setColor("#F1C40F")
-                    .setAuthor({
-                        name: "Pixel Villa Support • Warning History",
-                        iconURL: client.user.displayAvatarURL()
-                    })
-                    .setThumbnail(
-                        user.user.displayAvatarURL({
-                            dynamic: true
-                        })
-                    )
-                    .setTitle(
-                        "<a:Warning:1532986372716236932> Infraction History"
-                    )
-                    .setDescription(
-                        `<:Shield_2:1532989398642327594> **User**\n${user}\n\n<:Stats:1532990723408793661> **Total Warnings**\n${userWarns.length}/5`
-                    )
-                    .setFooter({
-                        text: "Pixel Villa Support • Moderation"
-                    })
-                    .setTimestamp();
-
-                userWarns
+                const historyBlocks = userWarns
                     .slice(-5)
                     .reverse()
-                    .forEach((warn, index) => {
-                        embed.addFields({
-                            name: `<a:Warning:1532986372716236932> Warning #${userWarns.length - index} • ID: ${warn.id || "N/A"}`,
-                            value:
-                                `<:Shield_2:1532989398642327594> **Moderator**\n${warn.moderator}\n\n` +
-                                `<a:LP_Message:1532991009066324049> **Reason**\n${warn.reason}\n\n` +
-                                `<a:Clock:1532990759371018372> **Date**\n<t:${Math.floor(new Date(warn.timestamp).getTime() / 1000)}:R>`,
-                            inline: false
-                        });
-                    });
+                    .map((warn, index) =>
+                        `**Warning #${userWarns.length - index} • ID: ${warn.id || "N/A"}**\n\n` +
+                        `<:Shield_2:1532989398642327594> **Moderator**\n${warn.moderator}\n\n` +
+                        `<a:LP_Message:1532991009066324049> **Reason**\n${warn.reason}\n\n` +
+                        `<a:Clock:1532990759371018372> **Date**\n<t:${Math.floor(new Date(warn.timestamp).getTime() / 1000)}:R>`
+                    )
+                    .join("\n\n");
 
-                await message.channel.send({
-                    embeds: [embed]
-                });
+                await message.channel.send(
+                    cardReply(
+                        WARN_YELLOW,
+                        "<a:Warning:1532986372716236932> Infraction History",
+                        `<:Shield_2:1532989398642327594> **User**\n${user}\n\n<:Stats:1532990723408793661> **Total Warnings**\n${userWarns.length}/5\n\n${historyBlocks}`,
+                        getAvatarURL(user)
+                    )
+                );
             }
 
             if (command === "wremove") {
                 const user = message.mentions.members.first();
 
                 if (!user) {
-                    return message.channel.send({
-                        embeds: [
-                            makeEmbed(
-                                "#E74C3C",
-                                "<a:error:1532986765105696778> Invalid Usage",
-                                `**Usage:** \`${PREFIX}wremove @user <warning ID>\``
-                            )
-                        ]
-                    });
+                    return message.channel.send(
+                        cardReply(
+                            ERROR_RED,
+                            "<a:error:1532986765105696778> Invalid Usage",
+                            `**Usage:** \`${PREFIX}wremove @user <warning ID>\``
+                        )
+                    );
                 }
 
                 const warnId = args.find(arg => /^\d{6}$/.test(arg));
 
                 if (!warnId) {
-                    return message.channel.send({
-                        embeds: [
-                            makeEmbed(
-                                "#E74C3C",
-                                "<a:error:1532986765105696778> Missing Warning ID",
-                                `Please provide a valid Warning ID.\n\n**Usage:** \`${PREFIX}wremove @user <warning ID>\``
-                            )
-                        ]
-                    });
+                    return message.channel.send(
+                        cardReply(
+                            ERROR_RED,
+                            "<a:error:1532986765105696778> Missing Warning ID",
+                            `Please provide a valid Warning ID.\n\n**Usage:** \`${PREFIX}wremove @user <warning ID>\``
+                        )
+                    );
                 }
 
                 const warnings = await getWarnings();
 
                 if (!warnings[user.id] || warnings[user.id].length === 0) {
-                    return message.channel.send({
-                        embeds: [
-                            makeEmbed(
-                                "#E74C3C",
-                                "<a:error:1532986765105696778> No Warnings Found",
-                                `**${user.user.tag}** has no warnings to remove.`
-                            )
-                        ]
-                    });
+                    return message.channel.send(
+                        cardReply(
+                            ERROR_RED,
+                            "<a:error:1532986765105696778> No Warnings Found",
+                            `**${user.user.tag}** has no warnings to remove.`
+                        )
+                    );
                 }
 
                 const warnIndex = warnings[user.id].findIndex(
@@ -338,15 +257,13 @@ module.exports = client => {
                 );
 
                 if (warnIndex === -1) {
-                    return message.channel.send({
-                        embeds: [
-                            makeEmbed(
-                                "#E74C3C",
-                                "<a:error:1532986765105696778> Warning Not Found",
-                                `No warning found with ID **${warnId}**.`
-                            )
-                        ]
-                    });
+                    return message.channel.send(
+                        cardReply(
+                            ERROR_RED,
+                            "<a:error:1532986765105696778> Warning Not Found",
+                            `No warning found with ID **${warnId}**.`
+                        )
+                    );
                 }
 
                 const removed = warnings[user.id].splice(warnIndex, 1)[0];
@@ -359,36 +276,19 @@ module.exports = client => {
                     });
                 }
 
-                const embed = new EmbedBuilder()
-                    .setColor("#57F287")
-                    .setAuthor({
-                        name: "Pixel Villa Support • Warning System",
-                        iconURL: client.user.displayAvatarURL()
-                    })
-                    .setThumbnail(
-                        user.user.displayAvatarURL({
-                            dynamic: true
-                        })
-                    )
-                    .setTitle(
-                        "<a:success:1532986625343099050> Warning Removed"
-                    )
-                    .setDescription(
-                        `<:Shield_2:1532989398642327594> **User**\n${user}\n\n` +
-                        `<a:Warning:1532986372716236932> **Warning ID**\n\`${removed.id}\`\n\n` +
-                        `<a:LP_Message:1532991009066324049> **Reason**\n${removed.reason}\n\n` +
-                        `<:Shield_2:1532989398642327594> **Originally Warned By**\n${removed.moderator}\n\n` +
-                        `<a:settings:1532990547394957393> **Removed By**\n${message.author}\n\n` +
-                        `<a:sparkles:1532986077651140620> Warning has been removed successfully.`
-                    )
-                    .setFooter({
-                        text: "Pixel Villa Support • Moderation"
-                    })
-                    .setTimestamp();
+                const options = cardReply(
+                    COLORS.GREEN,
+                    "<a:success:1532986625343099050> Warning Removed",
+                    `<:Shield_2:1532989398642327594> **User**\n${user}\n\n` +
+                    `<a:Warning:1532986372716236932> **Warning ID**\n\`${removed.id}\`\n\n` +
+                    `<a:LP_Message:1532991009066324049> **Reason**\n${removed.reason}\n\n` +
+                    `<:Shield_2:1532989398642327594> **Originally Warned By**\n${removed.moderator}\n\n` +
+                    `<a:settings:1532990547394957393> **Removed By**\n${message.author}\n\n` +
+                    `<a:sparkles:1532986077651140620> Warning has been removed successfully.`,
+                    getAvatarURL(user)
+                );
 
-                await message.channel.send({
-                    embeds: [embed]
-                });
+                await message.channel.send(options);
 
                 if (config.LOG_CHANNEL_ID) {
                     try {
@@ -397,9 +297,7 @@ module.exports = client => {
                         );
 
                         if (logChannel) {
-                            await logChannel.send({
-                                embeds: [embed]
-                            });
+                            await logChannel.send(options);
                         }
                     } catch (err) {
                         console.error(
@@ -414,61 +312,40 @@ module.exports = client => {
                 const user = message.mentions.members.first();
 
                 if (!user) {
-                    return message.channel.send({
-                        embeds: [
-                            makeEmbed(
-                                "#E74C3C",
-                                "<a:error:1532986765105696778> Invalid Usage",
-                                `**Usage:** \`${PREFIX}wreset @user\``
-                            )
-                        ]
-                    });
+                    return message.channel.send(
+                        cardReply(
+                            ERROR_RED,
+                            "<a:error:1532986765105696778> Invalid Usage",
+                            `**Usage:** \`${PREFIX}wreset @user\``
+                        )
+                    );
                 }
 
                 const warnings = await getWarnings();
 
                 if (!warnings[user.id] || warnings[user.id].length === 0) {
-                    return message.channel.send({
-                        embeds: [
-                            makeEmbed(
-                                "#E74C3C",
-                                "<a:error:1532986765105696778> No Warnings Found",
-                                `**${user.user.tag}** does not have any warnings to reset.`
-                            )
-                        ]
-                    });
+                    return message.channel.send(
+                        cardReply(
+                            ERROR_RED,
+                            "<a:error:1532986765105696778> No Warnings Found",
+                            `**${user.user.tag}** does not have any warnings to reset.`
+                        )
+                    );
                 }
 
                 await db.collection("warnings").doc(user.id).delete();
 
-                const embed = new EmbedBuilder()
-                    .setColor("#57F287")
-                    .setAuthor({
-                        name: "Pixel Villa Support • Warning System",
-                        iconURL: client.user.displayAvatarURL()
-                    })
-                    .setThumbnail(
-                        user.user.displayAvatarURL({
-                            dynamic: true
-                        })
-                    )
-                    .setTitle(
-                        "<a:success:1532986625343099050> Warning History Reset"
-                    )
-                    .setDescription(
-                        `<:Shield_2:1532989398642327594> **User**\n${user}\n\n` +
-                        `<a:Warning:1532986372716236932> **Action**\nAll warnings have been removed\n\n` +
-                        `<a:settings:1532990547394957393> **Reset By**\n${message.author}\n\n` +
-                        `<a:sparkles:1532986077651140620> Infraction history has been cleared successfully.`
-                    )
-                    .setFooter({
-                        text: "Pixel Villa Support • Moderation"
-                    })
-                    .setTimestamp();
+                const options = cardReply(
+                    COLORS.GREEN,
+                    "<a:success:1532986625343099050> Warning History Reset",
+                    `<:Shield_2:1532989398642327594> **User**\n${user}\n\n` +
+                    `<a:Warning:1532986372716236932> **Action**\nAll warnings have been removed\n\n` +
+                    `<a:settings:1532990547394957393> **Reset By**\n${message.author}\n\n` +
+                    `<a:sparkles:1532986077651140620> Infraction history has been cleared successfully.`,
+                    getAvatarURL(user)
+                );
 
-                await message.channel.send({
-                    embeds: [embed]
-                });
+                await message.channel.send(options);
 
                 if (config.LOG_CHANNEL_ID) {
                     try {
@@ -477,9 +354,7 @@ module.exports = client => {
                         );
 
                         if (logChannel) {
-                            await logChannel.send({
-                                embeds: [embed]
-                            });
+                            await logChannel.send(options);
                         }
                     } catch (err) {
                         console.error(
@@ -496,14 +371,13 @@ module.exports = client => {
             );
 
             message.channel
-                .send({
-                    embeds: [
-                        makeEmbed(
-                            "Red",
-                            "An error occurred inside the warning system."
-                        )
-                    ]
-                })
+                .send(
+                    cardReply(
+                        ERROR_RED,
+                        "<a:error:1532986765105696778> Error",
+                        "An error occurred inside the warning system."
+                    )
+                )
                 .catch(() => {});
         }
     });
