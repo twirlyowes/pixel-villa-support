@@ -248,6 +248,48 @@ client.on("messageCreate", async (message) => {
   }
 
   try {
+
+if (command === "testembed") {
+  const container = new ContainerBuilder()
+    .setAccentColor(0x38BDF8)
+
+    .addTextDisplayComponents(
+      new TextDisplayBuilder()
+        .setContent(
+          "# PIXEL VILLA\n" +
+          "### Support System"
+        )
+    )
+
+    .addSeparatorComponents(
+      new SeparatorBuilder()
+    )
+
+    .addTextDisplayComponents(
+      new TextDisplayBuilder()
+        .setContent(
+          "**Square UI Test**\n\n" +
+          "This is a test of the new Pixel Villa card-style interface.\n\n" +
+          "**Theme:** Sky Blue\n" +
+          "**Style:** Components V2"
+        )
+    )
+
+    .addSeparatorComponents(
+      new SeparatorBuilder()
+    )
+
+    .addTextDisplayComponents(
+      new TextDisplayBuilder()
+        .setContent("-# Pixel Villa Support")
+    );
+
+  return message.reply({
+    components: [container],
+    flags: MessageFlags.IsComponentsV2
+  });
+}
+
     if (command === "minigames") {
       await hubCommand.execute(message, args);
       return; 
