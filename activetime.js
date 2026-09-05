@@ -1285,7 +1285,6 @@ module.exports = (client) => {
                         createCard({
                             color:
                                 COLORS.RED,
-
                             content:
                                 "❌ **Invalid User ID**\nUsage: `.removeuser <userID>` — provide a valid Discord user ID or mention."
                         });
@@ -1314,7 +1313,6 @@ module.exports = (client) => {
                         createCard({
                             color:
                                 COLORS.GREEN,
-
                             content:
                                 `✅ **Activity Record Removed**\nRemoved activetime record for \`${targetId}\`.`
                         });
@@ -1333,7 +1331,6 @@ module.exports = (client) => {
                         createCard({
                             color:
                                 COLORS.RED,
-
                             content:
                                 `❌ **Removal Failed**\nFailed to remove the record for \`${targetId}\`. Check the logs.`
                         });
@@ -1399,7 +1396,6 @@ module.exports = (client) => {
                         createCard({
                             color:
                                 COLORS.RED,
-
                             content:
                                 "❌ **Not a Staff Member**\nThat user is not a staff member or does not have the specified staff role."
                         });
@@ -1432,99 +1428,131 @@ module.exports = (client) => {
                     )
                 ) {
                     totalActive +=
-now -
-activeSessions.get(
-userId
+                        now -
+                        activeSessions.get(
+                            userId
+                        );
+                } else if (
+                    targetMember.presence &&
+                    targetMember.presence.status !==
+                        "offline"
+                ) {
+                    activeSessions.set(
+                        userId,
+                        now
+                    );
+                }
+
+                let totalVoice =
+                    dailyVoiceTimes.get(
+                        userId
+                    ) || 0;
+
+                if (
+                    voiceSessions.has(
+                        userId
+                    )
+                ) {
+                    totalVoice +=
+                        now -
+                        voiceSessions.get(
+                            userId
+                        );
+                } else if (
+                    targetMember.voice &&
+                    targetMember.voice.channel
+                ) {
+                    voiceSessions.set(
+                        userId,
+                        now
+                    );
+                }
+
+                const messages =
+                    dailyMessageCounts.get(
+                        userId
+                    ) || 0;
+
+                const commands =
+                    dailyCommandCounts.get(
+                        userId
+                    ) || 0;
+
+                const status =
+                    targetMember.presence
+                        ? targetMember.presence.status
+                        : "offline";
+
+                let statusFormatted =
+                    "<a:error:1532986765105696778> Offline";
+
+                if (
+                    status ===
+                    "online"
+                ) {
+                    statusFormatted =
+                        "<a:ONLINE:1532986890519711815> Online";
+                } else if (
+                    status ===
+                    "idle"
+                ) {
+                    statusFormatted =
+                        "<a:Moon:1532988257338527835> Idle";
+                } else if (
+                    status ===
+                    "dnd"
+                ) {
+                    statusFormatted =
+                        "<a:error:1532986765105696778> Do Not Disturb";
+                }
+
+                const card =
+                    createCard({
+                        color:
+                            COLORS.SKY_BLUE,
+                        content:
+                            `## Pixel Villa Support • Activity Tracker\n` +
+                            `**${targetMember}**\n` +
+                            `Online: **${formatHM(totalActive)}**\n` +
+                            `Voice: **${formatHM(totalVoice)}**\n` +
+                            `Commands: **${commands}**\n` +
+                            `Messages: **${messages}**\n` +
+                            `${statusFormatted}\n` +
+                            `*Pixel Villa Support • Activity Module*`,
+                        avatarURL:
+                            getAvatarURL(
+                                targetMember
+                            ),
+                        avatarDescription:
+                            `${targetMember.user.username}'s avatar`
+                    });
+
+                return message.reply(
+                    noPingOptions({
+                        components: [
+                            card
+                        ],
+                        flags:
+                            MessageFlags.IsComponentsV2
+                    })
+                );
+            }
+        }
+    );
+};
+
+process.on(
+    "SIGINT",
+    async () => {
+        await saveAll();
+        process.exit(0);
+    }
 );
-} else if (
-targetMember.presence &&
-targetMember.presence.status !==
-"offline"
-) {
-activeSessions.set(
-userId,
-now
+
+process.on(
+    "SIGTERM",
+    async () => {
+        await saveAll();
+        process.exit(0);
+    }
 );
-}
-
-let totalVoice =
-dailyVoiceTimes.get(
-userId
-) || 0;
-
-if (
-voiceSessions.has(
-userId
-)
-) {
-totalVoice +=
-now -
-voiceSessions.get(
-userId
-);
-} else if (
-targetMember.voice &&
-targetMember.voice.channel
-) {
-voiceSessions.set(
-userId,
-now
-);
-}
-
-const messages =
-dailyMessageCounts.get(
-userId
-) || 0;
-
-const commands =
-dailyCommandCounts.get(
-userId
-) || 0;
-
-const status =
-targetMember.presence
-? targetMember.presence.status
-: "offline";
-
-let statusFormatted =
-"<a:error:1532986765105696778> Offline";
-
-if (status === "online") {
-statusFormatted =
-"<a:ONLINE:1532986890519711815> Online";
-} else if (status === "idle") {
-statusFormatted =
-"<a:Moon:1532988257338527835> Idle";
-} else if (status === "dnd") {
-statusFormatted =
-"<a:error:1532986765105696778> Do Not Disturb";
-}
-
-const card = createCard({
-color: COLORS.SKY_BLUE,
-content:
-"## Pixel Villa Support • Activity Tracker\n" +
-"<:Shield_2:1532989398642327594> **${targetMember}**\n" +
-"<a:Clock:1532990759371018372> Online: **${formatHM(totalActive)}**\n" +
-"<a:voice:1532987137199440003> Voice: **${formatHM(totalVoice)}**\n" +
-"<:Stats:1532990723408793661> Commands: **${commands}**\n" +
-"<a:LP_Message:1532991009066324049> Messages: **${messages}**\n" +
-"${statusFormatted}\n" +
-"---SEPARATOR---\n" +
-"*Pixel Villa Support • Activity Module*",
-avatarURL:
-getAvatarURL(targetMember),
-avatarDescription:
-"${targetMember.user.username}'s avatar",
-separators: true
-});
-
-return message.reply(
-noPingOptions({
-components: [card],
-flags: MessageFlags.IsComponentsV2
-})
-);
-
-
