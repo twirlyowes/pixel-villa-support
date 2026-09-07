@@ -192,7 +192,8 @@ ${deletedMessage.slice(0, 1000)}
         }
     });
 
-    // Delete any message that gets a link edited into it
+    // Delete a message only if a link was newly added via editing
+    // (messages that already contained a link before the edit are left alone)
     client.on("messageUpdate", async (oldMessage, newMessage) => {
         try {
             if (newMessage.partial) await newMessage.fetch().catch(() => {});
@@ -201,10 +202,17 @@ ${deletedMessage.slice(0, 1000)}
             const isStaff = newMessage.member?.roles.cache.has(config.STAFF_ROLE_ID);
             if (isStaff) return;
 
-            const content = newMessage.content || "";
-            if (!linkRegex.test(content)) return;
+            const newContent = newMessage.content || "";
+            if (!linkRegex.test(newContent)) return;
 
-            const deletedMessage = content;
+            // If we know what the message looked like before the edit,
+            // and it already had a link, this isn't a "link edited in" case — leave it.
+            const oldContent = oldMessage.partial ? null : (oldMessage.content || "");
+            if (oldContent !== null && linkRegex.test(oldContent)) {
+                return;
+            }
+
+            const deletedMessage = newContent;
 
             await newMessage.delete().catch(() => {});
 
