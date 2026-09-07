@@ -8,36 +8,6 @@ const ERROR_RED = 0xE74C3C;
 const WARN_YELLOW = 0xF1C40F;
 const WARNED_GREEN = 0x43B581;
 
-async function getWarnings() {
-    try {
-        const snapshot = await db.collection("warnings").get();
-        const warnings = {};
-
-        snapshot.forEach(doc => {
-            warnings[doc.id] = doc.data().warnings || [];
-        });
-
-        return warnings;
-    } catch (error) {
-        console.error("❌ Firebase warning load error:", error);
-        return {};
-    }
-}
-
-async function saveWarnings(warnings) {
-    try {
-        for (const [userId, userWarnings] of Object.entries(warnings)) {
-            await db.collection("warnings").doc(userId).set({
-                warnings: userWarnings
-            });
-        }
-
-        console.log("✅ Warnings saved to Firebase");
-    } catch (error) {
-        console.error("❌ Firebase warning save error:", error);
-    }
-}
-
 module.exports = client => {
     const PREFIX = ".";
 
@@ -271,8 +241,14 @@ module.exports = client => {
                     );
                 }
 
-                const warnings = await getWarnings();
-                const userWarns = warnings[user.id] || [];
+                const userDoc = await db
+                    .collection("warnings")
+                    .doc(user.id)
+                    .get();
+
+                const userWarns = userDoc.exists
+                    ? userDoc.data().warnings || []
+                    : [];
 
                 if (userWarns.length === 0) {
                     return message.channel.send(
@@ -343,12 +319,16 @@ module.exports = client => {
                     );
                 }
 
-                const warnings = await getWarnings();
+                const userDoc = await db
+                    .collection("warnings")
+                    .doc(user.id)
+                    .get();
 
-                if (
-                    !warnings[user.id] ||
-                    warnings[user.id].length === 0
-                ) {
+                const userWarns = userDoc.exists
+                    ? userDoc.data().warnings || []
+                    : [];
+
+                if (userWarns.length === 0) {
                     return message.channel.send(
                         cardReply(
                             ERROR_RED,
@@ -358,7 +338,7 @@ module.exports = client => {
                     );
                 }
 
-                const warnIndex = warnings[user.id].findIndex(
+                const warnIndex = userWarns.findIndex(
                     warn => warn.id === warnId
                 );
 
@@ -372,12 +352,9 @@ module.exports = client => {
                     );
                 }
 
-                const removed = warnings[user.id].splice(
-                    warnIndex,
-                    1
-                )[0];
+                const removed = userWarns.splice(warnIndex, 1)[0];
 
-                if (warnings[user.id].length === 0) {
+                if (userWarns.length === 0) {
                     await db
                         .collection("warnings")
                         .doc(user.id)
@@ -387,7 +364,7 @@ module.exports = client => {
                         .collection("warnings")
                         .doc(user.id)
                         .set({
-                            warnings: warnings[user.id]
+                            warnings: userWarns
                         });
                 }
 
@@ -445,12 +422,16 @@ module.exports = client => {
                     );
                 }
 
-                const warnings = await getWarnings();
+                const userDoc = await db
+                    .collection("warnings")
+                    .doc(user.id)
+                    .get();
 
-                if (
-                    !warnings[user.id] ||
-                    warnings[user.id].length === 0
-                ) {
+                const userWarns = userDoc.exists
+                    ? userDoc.data().warnings || []
+                    : [];
+
+                if (userWarns.length === 0) {
                     return message.channel.send(
                         cardReply(
                             ERROR_RED,
