@@ -275,7 +275,7 @@ module.exports = (client) => {
           footer: `Pixel Villa Support • Voice Management • ${new Date().toLocaleString()}`
         });
 
-        tempChannel.send({ content: `${member}`, components: [controlCard], flags: MessageFlags.IsComponentsV2 })
+        tempChannel.send({ components: [controlCard], flags: MessageFlags.IsComponentsV2 })
           .catch(err => console.error("[VoiceSystem] Failed to send control panel:", err));
 
       } catch (error) {  
@@ -494,10 +494,10 @@ module.exports = (client) => {
 
         const successCard = buildCard({
           color: CARD_COLORS.GREEN,
-          description: `<:owner:1532337324762075146> Channel ownership has been successfully transferred to ${targetMember}!`
+          description: `${targetMember} <:owner:1532337324762075146> Channel ownership has been successfully transferred to ${targetMember}!`
         });
 
-        return message.reply({ content: `${targetMember}`, components: [successCard], flags: MessageFlags.IsComponentsV2 });  
+        return message.reply({ components: [successCard], flags: MessageFlags.IsComponentsV2 });  
       } catch (error) {  
         console.error("Error transferring ownership:", error);  
         return message.reply({ components: [buildCard({ color: CARD_COLORS.RED, description: "❌ An error occurred while transferring ownership." })], flags: MessageFlags.IsComponentsV2 });  
