@@ -2,7 +2,9 @@
 const {
   ChannelType,
   PermissionsBitField,
-  EmbedBuilder
+  ContainerBuilder,
+  TextDisplayBuilder,
+  MessageFlags
 } = require("discord.js");
 const db = require("./firebase");
 
@@ -29,6 +31,39 @@ const VALID_VC_COMMANDS = new Set([
   "vcowner",
   "vcsync"
 ]);
+
+// ---- Components V2 card helpers (embed -> card conversion only) ----
+const CARD_COLORS = {
+  BLURPLE: 0x5865F2,
+  GREEN: 0x57f287,
+  RED: 0xed4245
+};
+
+// Simple single-block card: title/description/fields all rendered as text content
+function buildCard({ color, title, description, fields, footer }) {
+  const container = new ContainerBuilder().setAccentColor(color);
+
+  let content = "";
+  if (title) content += `### ${title}\n`;
+  if (description) content += `${description}`;
+  if (content) {
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(content));
+  }
+
+  if (fields && fields.length) {
+    for (const field of fields) {
+      container.addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(`**${field.name}**\n${field.value}`)
+      );
+    }
+  }
+
+  if (footer) {
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(`-# ${footer}`));
+  }
+
+  return container;
+}
 
 // Helper functions for JSONBin API communication with robust error handling and retries
 async function loadVoiceChannels() {
@@ -202,7 +237,7 @@ module.exports = (client) => {
         activeTempChannels.set(tempChannel.id, member.id);  
         console.log(`[VoiceSystem] Created new temp channel: ${tempChannel.name} (${tempChannel.id}) for owner: ${member.user.tag}`);
 
-        // SPEED: Firebase persistence and the control-panel embed don't need
+        // SPEED: Firebase persistence and the control-panel card don't need
         // to finish before the user is in their channel — fire them off
         // without awaiting instead of blocking on them sequentially.
         saveVoiceChannel(tempChannel.id, {
@@ -211,25 +246,20 @@ module.exports = (client) => {
           guildId: guild.id
         }).catch(err => console.error("[VoiceSystem] Failed to persist new temp channel:", err));
 
-        const controlEmbed = new EmbedBuilder()
-  .setColor("#5865F2")
-  .setAuthor({
-    name: "Pixel Villa Support • Voice System",
-    iconURL: client.user.displayAvatarURL()
-  })
-  .setTitle("🎙️ Temporary Voice Control Panel")
-  .setDescription(
+        const controlCard = buildCard({
+          color: CARD_COLORS.BLURPLE,
+          title: "🎙️ Temporary Voice Control Panel",
+          description:
 `${member}, welcome to your private voice channel!
 
 <:Shield_2:1532989398642327594> **Channel Owner**
 > ${member}
 
-<a:settings:1532990547394957393> **Manage your room using these commands:**
-`
-  )
-  .addFields({
-    name: "<a:sparkles:1532986077651140620> Voice Commands",
-    value:
+<a:settings:1532990547394957393> **Manage your room using these commands:**`,
+          fields: [
+            {
+              name: "<a:sparkles:1532986077651140620> Voice Commands",
+              value:
 "`vclock` • Lock your room\n" +
 "`vcunlock` • Unlock your room\n" +
 "`vchide` • Hide your room\n" +
@@ -239,15 +269,13 @@ module.exports = (client) => {
 "`vcadd @user` • Allow user\n" +
 "`vcremove @user` • Remove user\n" +
 "`vckick @user` • Kick user\n" +
-"`vcowner @user` • Transfer ownership",
-    inline: false
-  })
-  .setFooter({
-    text: "Pixel Villa Support • Voice Management"
-  })
-  .setTimestamp();  
+"`vcowner @user` • Transfer ownership"
+            }
+          ],
+          footer: `Pixel Villa Support • Voice Management • ${new Date().toLocaleString()}`
+        });
 
-        tempChannel.send({ content: `${member}`, embeds: [controlEmbed] })
+        tempChannel.send({ content: `${member}`, components: [controlCard], flags: MessageFlags.IsComponentsV2 })
           .catch(err => console.error("[VoiceSystem] Failed to send control panel:", err));
 
       } catch (error) {  
@@ -325,117 +353,118 @@ module.exports = (client) => {
 
     console.log(`[VoiceSystem Command] Command detected: ${command} by user ${message.author.tag} in channel ${memberChannel.name} (Is Owner: ${isOwner})`);
 
-    const notOwnerEmbed = new EmbedBuilder()  
-      .setColor("Red")  
-      .setDescription("❌ Only the **owner** of this temporary voice channel can use these controls.");  
+    const notOwnerCard = buildCard({
+      color: CARD_COLORS.RED,
+      description: "❌ Only the **owner** of this temporary voice channel can use these controls."
+    });
 
     // LOCK COMMAND  
     if (command === "vclock") {  
-      if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });  
+      if (!isOwner) return message.reply({ components: [notOwnerCard], flags: MessageFlags.IsComponentsV2 });  
       await memberChannel.permissionOverwrites.edit(message.guild.id, { Connect: false });  
-      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription("<:lock:1532337641494937651> Voice channel has been **locked**.")] });  
+      return message.reply({ components: [buildCard({ color: CARD_COLORS.GREEN, description: "<:lock:1532337641494937651> Voice channel has been **locked**." })], flags: MessageFlags.IsComponentsV2 });  
     }  
 
     // UNLOCK COMMAND  
     if (command === "vcunlock") {  
-      if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });  
+      if (!isOwner) return message.reply({ components: [notOwnerCard], flags: MessageFlags.IsComponentsV2 });  
       await memberChannel.permissionOverwrites.edit(message.guild.id, { Connect: true });  
-      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription("<:unlock:1532337553217294528> Voice channel has been **unlocked**.")] });  
+      return message.reply({ components: [buildCard({ color: CARD_COLORS.GREEN, description: "<:unlock:1532337553217294528> Voice channel has been **unlocked**." })], flags: MessageFlags.IsComponentsV2 });  
     }  
 
     // HIDE COMMAND  
     if (command === "vchide") {  
-      if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });  
+      if (!isOwner) return message.reply({ components: [notOwnerCard], flags: MessageFlags.IsComponentsV2 });  
       await memberChannel.permissionOverwrites.edit(message.guild.id, { ViewChannel: false });  
-      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription("<:hide:1532336151854190743> Voice channel is now **hidden**.")] });  
+      return message.reply({ components: [buildCard({ color: CARD_COLORS.GREEN, description: "<:hide:1532336151854190743> Voice channel is now **hidden**." })], flags: MessageFlags.IsComponentsV2 });  
     }  
 
     // UNHIDE COMMAND  
     if (command === "vcunhide") {  
-      if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });  
+      if (!isOwner) return message.reply({ components: [notOwnerCard], flags: MessageFlags.IsComponentsV2 });  
       await memberChannel.permissionOverwrites.edit(message.guild.id, { ViewChannel: true });  
-      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription("<:unhide:1532336276164841482> Voice channel is now **visible**.")] });  
+      return message.reply({ components: [buildCard({ color: CARD_COLORS.GREEN, description: "<:unhide:1532336276164841482> Voice channel is now **visible**." })], flags: MessageFlags.IsComponentsV2 });  
     }  
 
     // RENAME COMMAND  
     if (command === "vcname") {  
-      if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });  
+      if (!isOwner) return message.reply({ components: [notOwnerCard], flags: MessageFlags.IsComponentsV2 });  
       const newName = args.join(" ");  
-      if (!newName) return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("⚠️ Please provide a new name. (e.g., `vcname Chill Lounge`)")] });  
+      if (!newName) return message.reply({ components: [buildCard({ color: CARD_COLORS.RED, description: "⚠️ Please provide a new name. (e.g., `vcname Chill Lounge`)" })], flags: MessageFlags.IsComponentsV2 });  
         
       await memberChannel.setName(newName);  
-      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription(`<:name:1532337141214871622> Channel renamed to **${newName}**.`)] });  
+      return message.reply({ components: [buildCard({ color: CARD_COLORS.GREEN, description: `<:name:1532337141214871622> Channel renamed to **${newName}**.` })], flags: MessageFlags.IsComponentsV2 });  
     }  
 
     // USER LIMIT COMMAND  
     if (command === "vclimit") {  
-      if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });  
+      if (!isOwner) return message.reply({ components: [notOwnerCard], flags: MessageFlags.IsComponentsV2 });  
       const limit = parseInt(args[0], 10);  
       if (isNaN(limit) || limit < 0 || limit > 99) {  
-        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("⚠️ Please specify a valid limit between 0 and 99.")] });  
+        return message.reply({ components: [buildCard({ color: CARD_COLORS.RED, description: "⚠️ Please specify a valid limit between 0 and 99." })], flags: MessageFlags.IsComponentsV2 });  
       }  
 
       await memberChannel.setUserLimit(limit);  
-      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription(`<:limit:1532340516249931826> User limit set to **${limit === 0 ? "Unlimited" : limit}**.`)] });  
+      return message.reply({ components: [buildCard({ color: CARD_COLORS.GREEN, description: `<:limit:1532340516249931826> User limit set to **${limit === 0 ? "Unlimited" : limit}**.` })], flags: MessageFlags.IsComponentsV2 });  
     }  
 
     // ADD / PERMIT COMMAND  
     if (command === "vcadd") {  
-      if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });  
+      if (!isOwner) return message.reply({ components: [notOwnerCard], flags: MessageFlags.IsComponentsV2 });  
       const targetMember = await findTargetMember(message, args);  
         
       if (!targetMember) {  
-        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("⚠️ Please specify a valid user name or mention to add to your channel.")] });  
+        return message.reply({ components: [buildCard({ color: CARD_COLORS.RED, description: "⚠️ Please specify a valid user name or mention to add to your channel." })], flags: MessageFlags.IsComponentsV2 });  
       }  
 
       await memberChannel.permissionOverwrites.edit(targetMember.id, {   
         Connect: true,   
         ViewChannel: true   
       });  
-      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription(`<:add:1532337807765278801> Added **${targetMember.user.tag}** to your channel permissions.`)] });  
+      return message.reply({ components: [buildCard({ color: CARD_COLORS.GREEN, description: `<:add:1532337807765278801> Added **${targetMember.user.tag}** to your channel permissions.` })], flags: MessageFlags.IsComponentsV2 });  
     }  
 
     // REMOVE / REVOKE COMMAND  
     if (command === "vcremove") {  
-      if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });  
+      if (!isOwner) return message.reply({ components: [notOwnerCard], flags: MessageFlags.IsComponentsV2 });  
       const targetMember = await findTargetMember(message, args);  
 
       if (!targetMember) {  
-        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("⚠️ Please specify a valid user name or mention to remove from your channel permissions.")] });  
+        return message.reply({ components: [buildCard({ color: CARD_COLORS.RED, description: "⚠️ Please specify a valid user name or mention to remove from your channel permissions." })], flags: MessageFlags.IsComponentsV2 });  
       }  
 
       if (targetMember.id === ownerId) {  
-        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("❌ You cannot remove permissions for yourself.")] });  
+        return message.reply({ components: [buildCard({ color: CARD_COLORS.RED, description: "❌ You cannot remove permissions for yourself." })], flags: MessageFlags.IsComponentsV2 });  
       }  
 
       await memberChannel.permissionOverwrites.delete(targetMember.id).catch(() => {});  
-      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription(`<:remove:1532337229907759124> Revoked channel permissions for **${targetMember.user.tag}**.`)] });  
+      return message.reply({ components: [buildCard({ color: CARD_COLORS.GREEN, description: `<:remove:1532337229907759124> Revoked channel permissions for **${targetMember.user.tag}**.` })], flags: MessageFlags.IsComponentsV2 });  
     }  
 
     // KICK COMMAND  
     if (command === "vckick") {  
-      if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });  
+      if (!isOwner) return message.reply({ components: [notOwnerCard], flags: MessageFlags.IsComponentsV2 });  
       const targetMember = await findTargetMember(message, args);  
 
       if (!targetMember || targetMember.voice.channelId !== memberChannel.id) {  
-        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("⚠️ Please specify a valid user who is currently inside your voice channel.")] });  
+        return message.reply({ components: [buildCard({ color: CARD_COLORS.RED, description: "⚠️ Please specify a valid user who is currently inside your voice channel." })], flags: MessageFlags.IsComponentsV2 });  
       }  
 
       await targetMember.voice.disconnect();  
-      return message.reply({ embeds: [new EmbedBuilder().setColor("Green").setDescription(`<:kick:1532337429426471044> Kicked **${targetMember.user.tag}** from your channel.`)] });  
+      return message.reply({ components: [buildCard({ color: CARD_COLORS.GREEN, description: `<:kick:1532337429426471044> Kicked **${targetMember.user.tag}** from your channel.` })], flags: MessageFlags.IsComponentsV2 });  
     }  
 
-    // 1. FIXED: TRANSFER OWNERSHIP COMMAND (`vcowner`) using .setDescription() instead of .setItem()
+    // 1. TRANSFER OWNERSHIP COMMAND (`vcowner`)
     if (command === "vcowner") {  
-      if (!isOwner) return message.reply({ embeds: [notOwnerEmbed] });  
+      if (!isOwner) return message.reply({ components: [notOwnerCard], flags: MessageFlags.IsComponentsV2 });  
       const targetMember = await findTargetMember(message, args);  
 
       if (!targetMember || targetMember.voice.channelId !== memberChannel.id) {  
-        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("⚠️ Please specify a valid user who is currently inside your voice channel.")] });  
+        return message.reply({ components: [buildCard({ color: CARD_COLORS.RED, description: "⚠️ Please specify a valid user who is currently inside your voice channel." })], flags: MessageFlags.IsComponentsV2 });  
       }  
 
       if (targetMember.id === ownerId) {  
-        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("⚠️ You are already the owner of this channel.")] });  
+        return message.reply({ components: [buildCard({ color: CARD_COLORS.RED, description: "⚠️ You are already the owner of this channel." })], flags: MessageFlags.IsComponentsV2 });  
       }  
 
       try {  
@@ -463,16 +492,16 @@ module.exports = (client) => {
   updatedAt: Date.now()
 });
 
-        const successEmbed = new EmbedBuilder()  
-          .setColor("Green")  
-          .setDescription(`<:owner:1532337324762075146> Channel ownership has been successfully transferred to ${targetMember}!`);  
+        const successCard = buildCard({
+          color: CARD_COLORS.GREEN,
+          description: `<:owner:1532337324762075146> Channel ownership has been successfully transferred to ${targetMember}!`
+        });
 
-        return message.reply({ content: `${targetMember}`, embeds: [successEmbed] });  
+        return message.reply({ content: `${targetMember}`, components: [successCard], flags: MessageFlags.IsComponentsV2 });  
       } catch (error) {  
         console.error("Error transferring ownership:", error);  
-        return message.reply({ embeds: [new EmbedBuilder().setColor("Red").setDescription("❌ An error occurred while transferring ownership.")] });  
+        return message.reply({ components: [buildCard({ color: CARD_COLORS.RED, description: "❌ An error occurred while transferring ownership." })], flags: MessageFlags.IsComponentsV2 });  
       }  
     }
   });
 };
-              
