@@ -57,6 +57,23 @@ module.exports = client => {
         };
     }
 
+    // IMPORTANT: message.mentions.members will ALSO contain the replied-to
+    // user when someone uses Discord's reply feature (with "mention author"
+    // enabled), even if they never typed an @mention. Relying on
+    // message.mentions.members.first() therefore lets a bare reply
+    // (e.g. replying + typing ".warn spamming") slip through as if a user
+    // had been pinged. To require an EXPLICIT typed mention, we only accept
+    // a mention that appears literally as the first argument.
+    function getExplicitMentionedMember(message, args) {
+        if (!args[0]) return null;
+
+        const match = args[0].match(/^<@!?(\d+)>$/);
+
+        if (!match) return null;
+
+        return message.mentions.members.get(match[1]) || null;
+    }
+
     client.on("messageCreate", async message => {
         if (message.author.bot || !message.guild) return;
         if (!message.content.startsWith(PREFIX)) return;
@@ -107,14 +124,14 @@ module.exports = client => {
                  * Replying to a user and typing .warn
                  */
 
-                const user = message.mentions.members.first();
+                const user = getExplicitMentionedMember(message, args);
 
                 if (!user) {
                     return message.channel.send(
                         cardReply(
                             ERROR_RED,
                             "<a:error:1532986765105696778> Invalid Usage",
-                            `You must **explicitly ping the user** you want to warn.\n\n**Usage:** \`${PREFIX}warn @user [reason]\``
+                            `You must **explicitly ping the user** you want to warn.\n\n**Usage:** \`${PREFIX}warn @user [reason]\`\n\nReplying to a message does **not** count — you must type the @mention.`
                         )
                     );
                 }
@@ -230,8 +247,29 @@ module.exports = client => {
 
             if (command === "wlist") {
 
-                const user =
-                    message.mentions.members.first() || message.member;
+                /*
+                 * IMPORTANT:
+                 * The user MUST be explicitly mentioned, same as warn/wremove/wreset.
+                 *
+                 * Examples:
+                 * .wlist @User
+                 *
+                 * These will NOT work:
+                 * .wlist
+                 * Replying to a user and typing .wlist
+                 */
+
+                const user = getExplicitMentionedMember(message, args);
+
+                if (!user) {
+                    return message.channel.send(
+                        cardReply(
+                            ERROR_RED,
+                            "<a:error:1532986765105696778> Invalid Usage",
+                            `You must **explicitly ping the user** you want to check.\n\n**Usage:** \`${PREFIX}wlist @user\`\n\nReplying to a message does **not** count — you must type the @mention.`
+                        )
+                    );
+                }
 
                 const warnings = await getWarnings();
                 const userWarns = warnings[user.id] || [];
@@ -280,14 +318,14 @@ module.exports = client => {
 
             if (command === "wremove") {
 
-                const user = message.mentions.members.first();
+                const user = getExplicitMentionedMember(message, args);
 
                 if (!user) {
                     return message.channel.send(
                         cardReply(
                             ERROR_RED,
                             "<a:error:1532986765105696778> Invalid Usage",
-                            `**Usage:** \`${PREFIX}wremove @user <warning ID>\``
+                            `**Usage:** \`${PREFIX}wremove @user <warning ID>\`\n\nReplying to a message does **not** count — you must type the @mention.`
                         )
                     );
                 }
@@ -395,14 +433,14 @@ module.exports = client => {
 
             if (command === "wreset") {
 
-                const user = message.mentions.members.first();
+                const user = getExplicitMentionedMember(message, args);
 
                 if (!user) {
                     return message.channel.send(
                         cardReply(
                             ERROR_RED,
                             "<a:error:1532986765105696778> Invalid Usage",
-                            `**Usage:** \`${PREFIX}wreset @user\``
+                            `**Usage:** \`${PREFIX}wreset @user\`\n\nReplying to a message does **not** count — you must type the @mention.`
                         )
                     );
                 }
