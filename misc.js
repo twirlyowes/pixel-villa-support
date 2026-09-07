@@ -232,7 +232,9 @@ module.exports = (client) => {
           }
         }
 
-        await targetUser.fetch(true);
+        // fetch(true) force-refreshes the full User object (including flags),
+        // so we no longer need the separate deprecated fetchFlags() call below.
+        targetUser = await targetUser.fetch(true);
 
         let acknowledgment = "Member";
 
@@ -296,7 +298,7 @@ module.exports = (client) => {
               .join(", ")
           : "None";
 
-        const flags = await targetUser.fetchFlags();
+        const flags = targetUser.flags;
 
         const badgeMap = {
           ActiveDeveloper: "🧑‍💻 Active Developer",
@@ -314,7 +316,7 @@ module.exports = (client) => {
           VerifiedDeveloper: "💻 Early Verified Bot Developer"
         };
 
-        const badges = flags.toArray().length
+        const badges = flags?.toArray().length
           ? flags
               .toArray()
               .map((f) => badgeMap[f] || f)
