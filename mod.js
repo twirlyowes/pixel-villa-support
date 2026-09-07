@@ -36,6 +36,23 @@ module.exports = (client) => {
     return target.roles.highest.position < message.member.roles.highest.position;
   }
 
+  // IMPORTANT: message.mentions.members will ALSO contain the replied-to
+  // user when someone uses Discord's reply feature (with "mention author"
+  // enabled), even if they never typed an @mention. Relying on
+  // message.mentions.members.first() therefore lets a bare reply
+  // (e.g. replying + typing ".ban spamming") slip through as if a user
+  // had been pinged. To require an EXPLICIT typed mention, we only accept
+  // a mention that appears literally as the first argument.
+  function getExplicitMentionedMember(message, args) {
+    if (!args[0]) return null;
+
+    const match = args[0].match(/^<@!?(\d+)>$/);
+
+    if (!match) return null;
+
+    return message.mentions.members.get(match[1]) || null;
+  }
+
   async function sendLog(guild, options) {
     if (!config.LOG_CHANNEL_ID) return;
 
@@ -80,8 +97,8 @@ module.exports = (client) => {
           );
         }
 
-        // EXPLICIT @MENTION REQUIRED
-        const user = message.mentions.members.first();
+        // EXPLICIT @MENTION REQUIRED (reply-ping does NOT count)
+        const user = getExplicitMentionedMember(message, args);
 
         const reason =
           args.slice(1).join(" ") || "No reason provided";
@@ -90,7 +107,7 @@ module.exports = (client) => {
           return message.reply(
             cardReply(
               WARNING_YELLOW,
-              `<a:Warning:1532986372716236932> **Usage:** \`${PREFIX}kick @user [reason]\``,
+              `<a:Warning:1532986372716236932> **Usage:** \`${PREFIX}kick @user [reason]\`\n\nReplying to a message does **not** count — you must type the @mention.`,
               message.author
             )
           );
@@ -146,8 +163,8 @@ module.exports = (client) => {
           );
         }
 
-        // EXPLICIT @MENTION REQUIRED
-        const user = message.mentions.members.first();
+        // EXPLICIT @MENTION REQUIRED (reply-ping does NOT count)
+        const user = getExplicitMentionedMember(message, args);
 
         const reason =
           args.slice(1).join(" ") || "No reason provided";
@@ -156,7 +173,7 @@ module.exports = (client) => {
           return message.reply(
             cardReply(
               WARNING_YELLOW,
-              `<a:Warning:1532986372716236932> **Usage:** \`${PREFIX}ban @user [reason]\``,
+              `<a:Warning:1532986372716236932> **Usage:** \`${PREFIX}ban @user [reason]\`\n\nReplying to a message does **not** count — you must type the @mention.`,
               message.author
             )
           );
@@ -212,8 +229,8 @@ module.exports = (client) => {
           );
         }
 
-        // EXPLICIT @MENTION REQUIRED
-        const user = message.mentions.members.first();
+        // EXPLICIT @MENTION REQUIRED (reply-ping does NOT count)
+        const user = getExplicitMentionedMember(message, args);
 
         const nickname = args.slice(1).join(" ");
 
@@ -221,7 +238,7 @@ module.exports = (client) => {
           return message.reply(
             cardReply(
               WARNING_YELLOW,
-              `<a:Warning:1532986372716236932> **Usage:** \`${PREFIX}nick @user [new nickname / leave blank to reset]\``,
+              `<a:Warning:1532986372716236932> **Usage:** \`${PREFIX}nick @user [new nickname / leave blank to reset]\`\n\nReplying to a message does **not** count — you must type the @mention.`,
               message.author
             )
           );
@@ -468,3 +485,4 @@ module.exports = (client) => {
     }
   });
 };
+            
