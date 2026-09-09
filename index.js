@@ -346,10 +346,6 @@ client.once(
     }
 
     await registerSlashCommands();
-
-    // Start dashboard authentication only
-    // after the Discord client is ready.
-    startDashboardAuth(client);
   }
 );
 
