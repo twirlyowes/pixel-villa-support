@@ -18,7 +18,6 @@ const path = require("path");
 const config = require("./config.json");
 const hubCommand = require("./minigames/hub.js");
 const { COLORS, createCard, getAvatarURL } = require("./lib/pixelVillaUI");
-const { startDashboardAuth } = require("./dashboardAuth");
 
 config.TOKEN = process.env.DISCORD_TOKEN;
 
