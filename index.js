@@ -900,6 +900,9 @@ require("./activetime")(client);
 console.log("Loading afk...");
 require("./afk")(client);
 
+console.log("Loading YouTube...");
+require("./YouTube")(client);
+
 console.log("About to login...");
 console.log(
   "Token exists:",
