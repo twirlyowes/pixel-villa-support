@@ -127,6 +127,24 @@ async function getNotificationChannel() {
   return channel;
 }
 
+function extractYouTubeVideoIds(text = "") {
+  const ids = new Set();
+
+  const patterns = [
+    /https?:\\/\\/(?:www\\.)?youtube\\.com\\/watch\\?[^\\s<]*\\bv=([a-zA-Z0-9_-]{11})/gi,
+    /https?:\\/\\/(?:www\\.)?youtube\\.com\\/shorts\\/([a-zA-Z0-9_-]{11})(?:[^a-zA-Z0-9_-]|$)/gi,
+    /https?:\\/\\/(?:www\\.)?youtu\\.be\\/([a-zA-Z0-9_-]{11})(?:[^a-zA-Z0-9_-]|$)/gi
+  ];
+
+  for (const pattern of patterns) {
+    for (const match of text.matchAll(pattern)) {
+      if (match[1]) ids.add(match[1]);
+    }
+  }
+
+  return ids;
+}
+
 async function getAlreadyPostedVideoIds(channel) {
   const ids = new Set();
   let before;
@@ -140,15 +158,8 @@ async function getAlreadyPostedVideoIds(channel) {
     if (!messages.size) break;
 
     for (const message of messages.values()) {
-      const matches = message.content.match(
-        /https?:\/\/(?:www\.)?youtube\.com\/watch\?v=([a-zA-Z0-9_-]{11})/g
-      );
-
-      if (!matches) continue;
-
-      for (const url of matches) {
-        const id = url.match(/v=([a-zA-Z0-9_-]{11})/)?.[1];
-        if (id) ids.add(id);
+      for (const id of extractYouTubeVideoIds(message.content)) {
+        ids.add(id);
       }
     }
 
@@ -159,7 +170,6 @@ async function getAlreadyPostedVideoIds(channel) {
 
   return ids;
 }
-
 async function sendNotification(channel, video) {
   await channel.send({
     content: `@everyone 📢 **Mioxyie Uploaded new video**\n${video.title}\n${video.url}`,
