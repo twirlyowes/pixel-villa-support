@@ -56,14 +56,8 @@ module.exports = (client) => {
       try {
         await message.channel.send(
           cardReply(
-            COLORS.SKY_BLUE,
-            `# <:HOME:1532991400503673055> Pixel Villa Server IP\n\n` +
-            `<a:sparkles:1532986077651140620> **Java Edition**\n` +
-            `<:Link:1532991169984991302> **IP:** \`mc.pixelvilla.fun:25575\`\n\n` +
-            `<a:sparkles:1532986077651140620> **Bedrock Edition**\n` +
-            `<:Link:1532991169984991302> **IP:** \`mc.pixelvilla.fun\`\n` +
-            `<:terminal:1532991459005829264> **Port:** \`25575\`\n\n` +
-            `-# Requested by ${message.author.tag}`,
+            COLORS.RED,
+            "<a:error:1532986765105696778> **The server is currently closed.**\\n\\nSorry for the inconvenience caused.",
             client.user.displayAvatarURL({
               extension: "png",
               size: 128
