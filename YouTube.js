@@ -131,9 +131,9 @@ function extractYouTubeVideoIds(text = "") {
   const ids = new Set();
 
   const patterns = [
-    /https?:\\/\\/(?:www\\.)?youtube\\.com\\/watch\\?[^\\s<]*\\bv=([a-zA-Z0-9_-]{11})/gi,
-    /https?:\\/\\/(?:www\\.)?youtube\\.com\\/shorts\\/([a-zA-Z0-9_-]{11})(?:[^a-zA-Z0-9_-]|$)/gi,
-    /https?:\\/\\/(?:www\\.)?youtu\\.be\\/([a-zA-Z0-9_-]{11})(?:[^a-zA-Z0-9_-]|$)/gi
+    /https?:\/\/(?:www\.)?youtube\.com\/watch\?[^\s<]*\bv=([a-zA-Z0-9_-]{11})/gi,
+    /https?:\/\/(?:www\.)?youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})(?:[^a-zA-Z0-9_-]|$)/gi,
+    /https?:\/\/(?:www\.)?youtu\.be\/([a-zA-Z0-9_-]{11})(?:[^a-zA-Z0-9_-]|$)/gi
   ];
 
   for (const pattern of patterns) {
