@@ -161,9 +161,10 @@ async function getAlreadyPostedVideoIds(channel) {
 }
 
 async function sendNotification(channel, video) {
-  await channel.send(
-    `📢 **New YouTube upload from @mioxyie!**\n\n🎬 **${video.title}**\n🔗 ${video.url}`
-  );
+  await channel.send({
+    content: `@everyone 📢 **Mioxyie Uploaded new video**\n${video.title}\n${video.url}`,
+    allowedMentions: { parse: ["everyone"] }
+  });
 
   console.log(`[YouTube] Sent notification: ${video.title}`);
 }
