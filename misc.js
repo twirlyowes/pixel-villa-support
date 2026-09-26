@@ -57,7 +57,7 @@ module.exports = (client) => {
         await message.channel.send(
           cardReply(
             COLORS.RED,
-            "<a:error:1532986765105696778> **The server is currently closed.**\n\nSorry for the inconvenience caused.",
+            "<a:error:1532986765105696778> **The server is temporarily shut down for some reason.**\n\nWe apologize for the inconvenience. We hope you understand. <:pepeheart_pv:1519644544847577100>",
             client.user.displayAvatarURL({
               extension: "png",
               size: 128
