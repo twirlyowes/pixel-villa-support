@@ -5,7 +5,12 @@ const {
     ButtonStyle,
     PermissionFlagsBits,
     PermissionsBitField,
-    MessageFlags
+    MessageFlags,
+    AttachmentBuilder,
+    MediaGalleryBuilder,
+    MediaGalleryItemBuilder,
+    FileBuilder,
+    TextDisplayBuilder
 } = require("discord.js");
 
 const db = require("./firebase");
@@ -31,6 +36,121 @@ const CATEGORY_NAMES = {
     discord: "Discord",
     others: "Others"
 };
+
+const IMAGE_EXT = /\.(png|jpe?g|gif|webp)(\?|$)/i;
+const MAX_ATTACHMENTS = 10;
+
+// Accepts discord.js Attachment objects, stored objects, or legacy URL strings
+function normalizeAttachments(list) {
+    const arr = Array.isArray(list)
+        ? list
+        : list && typeof list.values === "function"
+            ? [...list.values()]
+            : [];
+
+    return arr
+        .map((att, i) => {
+            if (typeof att === "string") {
+                const clean = att.split("?")[0];
+                return {
+                    url: att,
+                    name: clean.split("/").pop() || `file_${i}`,
+                    contentType: null
+                };
+            }
+
+            return {
+                url: att.url,
+                name: att.name || `file_${i}`,
+                contentType: att.contentType || null
+            };
+        })
+        .filter(att => att.url)
+        .slice(0, MAX_ATTACHMENTS);
+}
+
+// Shape stored in Firestore for pending (pre-ticket) messages
+function serializeAttachments(attachments) {
+    return normalizeAttachments(attachments).map(att => ({
+        url: att.url,
+        name: att.name,
+        contentType: att.contentType
+    }));
+}
+
+function isImageAttachment(att) {
+    return (
+        (att.contentType && att.contentType.startsWith("image/")) ||
+        IMAGE_EXT.test(att.name || "") ||
+        IMAGE_EXT.test(att.url || "")
+    );
+}
+
+// Components V2 messages only display files that are referenced inside
+// the components, so a bare `files` array is not shown.
+async function sendWithAttachments(target, card, attachments) {
+    const list = normalizeAttachments(attachments);
+
+    if (!list.length) {
+        return target.send({
+            components: [card],
+            flags: MessageFlags.IsComponentsV2
+        });
+    }
+
+    const images = list.filter(isImageAttachment);
+    const others = list.filter(att => !isImageAttachment(att));
+
+    const extraComponents = [];
+    const files = [];
+
+    // Images: shown straight from the CDN URL (no re-upload, no size limit)
+    if (images.length) {
+        extraComponents.push(
+            new MediaGalleryBuilder().addItems(
+                images.map(att =>
+                    new MediaGalleryItemBuilder().setURL(att.url)
+                )
+            )
+        );
+    }
+
+    // Other files: re-uploaded and referenced with attachment://
+    others.forEach((att, i) => {
+        const safeName =
+            `${i}_${att.name}`.replace(/[^a-zA-Z0-9._-]/g, "_");
+
+        files.push(new AttachmentBuilder(att.url, { name: safeName }));
+
+        extraComponents.push(
+            new FileBuilder().setURL(`attachment://${safeName}`)
+        );
+    });
+
+    try {
+        return await target.send({
+            components: [card, ...extraComponents],
+            flags: MessageFlags.IsComponentsV2,
+            files
+        });
+    } catch (error) {
+        console.error(
+            "ModMail attachment send failed, falling back to links:",
+            error
+        );
+
+        // Fallback (e.g. file too large to re-upload): send the links as text
+        return target.send({
+            components: [
+                card,
+                new TextDisplayBuilder().setContent(
+                    list.map(att => `📎 ${att.url}`).join("\n")
+                )
+            ],
+            flags: MessageFlags.IsComponentsV2
+        });
+    }
+}
 
 async function getNextTicketId() {
     const counterRef = db.collection("modmail").doc("config");
@@ -205,14 +325,11 @@ ${message.content || "*[No Text Content]*"}
                             `${message.author.username}'s avatar`
                     });
 
-                    const files =
-                        message.attachments.map(att => att.url);
-
-                    await ticketChannel.send({
-                        components: [forwardCard],
-                        flags: MessageFlags.IsComponentsV2,
-                        files
-                    });
+                    await sendWithAttachments(
+                        ticketChannel,
+                        forwardCard,
+                        message.attachments
+                    );
 
                     return;
                 }
@@ -233,7 +350,7 @@ ${message.content || "*[No Text Content]*"}
                 messagesList.push({
                     content: message.content,
                     attachments:
-                        message.attachments.map(att => att.url),
+                        serializeAttachments(message.attachments),
                     timestamp: new Date().toISOString()
                 });
 
@@ -340,14 +457,11 @@ ${message.content || "*[No Text Content]*"}
                         : `${message.author.username}'s avatar`
                 });
 
-                const files =
-                    message.attachments.map(att => att.url);
-
-                await ticketUser.send({
-                    components: [staffCard],
-                    flags: MessageFlags.IsComponentsV2,
-                    files
-                }).catch(async () => {
+                await sendWithAttachments(
+                    ticketUser,
+                    staffCard,
+                    message.attachments
+                ).catch(async () => {
                     await message.reply(
                         "⚠️ Could not send DM to the user. They might have DMs disabled."
                     ).catch(() => {});
@@ -560,11 +674,11 @@ ${m.content || "*[No Text Content]*"}
                                     `${interaction.user.username}'s avatar`
                             });
 
-                        await ticketChannel.send({
-                            components: [historyCard],
-                            flags: MessageFlags.IsComponentsV2,
-                            files: m.attachments || []
-                        }).catch(() => {});
+                        await sendWithAttachments(
+                            ticketChannel,
+                            historyCard,
+                            m.attachments || []
+                        ).catch(() => {});
                     }
 
                     await pendingRef.delete()
