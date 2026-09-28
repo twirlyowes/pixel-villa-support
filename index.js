@@ -1,944 +1,403 @@
+const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
+const { GIFEncoder, quantize, applyPalette } = require('gifenc');
 const {
-  Client,
-  ContainerBuilder,
-  TextDisplayBuilder,
-  SeparatorBuilder,
-  MessageFlags,
-  GatewayIntentBits,
-  PermissionsBitField,
-  ActivityType,
-  Partials,
-  REST,
-  Routes,
-  SlashCommandBuilder
-} = require("discord.js");
+  AttachmentBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  StringSelectMenuBuilder,
+  PermissionFlagsBits,
+} = require('discord.js');
+const fs = require('fs');
+const path = require('path');
 
-const fs = require("fs").promises;
-const path = require("path");
-const config = require("./config.json");
-const hubCommand = require("./minigames/hub.js");
-const consoleLogger = require("./console");
-const { COLORS, createCard, getAvatarURL } = require("./lib/pixelVillaUI");
+const TRIGGER = '.quote';
+const COOLDOWN_MS = 5000;
+const STATE_TTL_MS = 60 * 60 * 1000; // controls work for 1 hour
+const MAX_CHARS = 400;
 
-config.TOKEN = process.env.DISCORD_TOKEN;
+const W = 1200;
+const H = 630;
 
-if (!config.TOKEN) {
-  console.error("❌ DISCORD_TOKEN environment variable is not set.");
-  process.exit(1);
+// ---------------------------------------------------------------- fonts
+const FONT_DIR = path.join(__dirname, 'fonts');
+const FONT_DEFS = {
+  mplus: {
+    label: 'M PLUS Rounded 1c (mplus)',
+    family: 'PV MPLUS Rounded',
+    files: ['MPLUSRounded1c-Regular.ttf', 'MPLUSRounded1c-Bold.ttf'],
+  },
+  dmserif: {
+    label: 'DM Serif Display (dmserif)',
+    family: 'PV DM Serif',
+    files: ['DMSerifDisplay-Regular.ttf'],
+  },
+  spacemono: {
+    label: 'Space Mono (spacemono)',
+    family: 'PV Space Mono',
+    files: ['SpaceMono-Regular.ttf', 'SpaceMono-Bold.ttf'],
+  },
+  pacifico: {
+    label: 'Pacifico (pacifico)',
+    family: 'PV Pacifico',
+    files: ['Pacifico-Regular.ttf'],
+  },
+  bebas: {
+    label: 'Bebas Neue (bebas)',
+    family: 'PV Bebas Neue',
+    files: ['BebasNeue-Regular.ttf'],
+  },
+};
+
+const availableFonts = [];
+for (const [key, def] of Object.entries(FONT_DEFS)) {
+  const found = def.files.filter((f) => fs.existsSync(path.join(FONT_DIR, f)));
+  if (!found.length) continue;
+  for (const f of found) GlobalFonts.registerFromPath(path.join(FONT_DIR, f), def.family);
+  availableFonts.push(key);
 }
-
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildVoiceStates,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildPresences,
-    GatewayIntentBits.DirectMessages
-  ],
-
-  partials: [
-    Partials.Channel
-  ]
-});
-consoleLogger.connect(client);
-client.setMaxListeners(20);
-
-const PREFIX = ".";
-const WARN_FILE = path.join(__dirname, "warnings.json");
-
-const GUILD_ID = "1510176142286389329";
-
-const ALLOWED_SERVER_IDS = [
-  GUILD_ID,
-  "1531246699975020544"
-];
-
-const slashCommands = [
-  new SlashCommandBuilder()
-    .setName("ping")
-    .setDescription("Check bot latency")
-    .toJSON()
-];
-
-async function registerSlashCommands() {
-  try {
-    const rest = new REST({ version: "10" }).setToken(config.TOKEN);
-
-    await rest.put(
-      Routes.applicationGuildCommands(client.user.id, GUILD_ID),
-      { body: slashCommands }
-    );
-
-    console.log("✅ Slash commands registered.");
-  } catch (err) {
-    console.error("❌ Failed to register slash commands:", err);
-  }
+if (!availableFonts.length) {
+  FONT_DEFS.system = { label: 'System (system)', family: 'sans-serif', files: [] };
+  availableFonts.push('system');
 }
+const DEFAULT_FONT = availableFonts[0];
 
-const AUTO_SLOWMODE_CHANNEL_ID = "1519052869574201506";
-const AUTO_SLOWMODE_WINDOW_MS = 15 * 1000;
-const AUTO_SLOWMODE_USER_THRESHOLD = 10;
-const AUTO_SLOWMODE_SECONDS = 2;
+// --------------------------------------------------------------- themes
+const THEMES = {
+  bw: { label: 'Black/White (default)', emoji: '⬛', bg: '#000000', fg: '#ffffff' },
+  wb: { label: 'White/Black', emoji: '⬜', bg: '#ffffff', fg: '#000000' },
+  midnight: { label: 'Midnight/Ice', emoji: '🟦', bg: '#0b1020', fg: '#e8ecff' },
+  cream: { label: 'Cream/Charcoal', emoji: '🟫', bg: '#f5efe0', fg: '#2b2b2b' },
+  rose: { label: 'Wine/Rose', emoji: '🟥', bg: '#1a0b12', fg: '#ffd6e7' },
+  forest: { label: 'Forest/Mint', emoji: '🟩', bg: '#08150d', fg: '#d5ffe0' },
+  grape: { label: 'Grape/White', emoji: '🟪', bg: '#1e1740', fg: '#ffffff' },
+};
 
-const recentChatters = new Map();
-const slowmodeState = new Map();
+const BRIGHTNESS = [1, 0.65, 1.35]; // normal, dim, bright
 
-async function handleAutoSlowmode(message) {
-  if (message.channel.id !== AUTO_SLOWMODE_CHANNEL_ID) return;
+const hexToRgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
 
-  const now = Date.now();
+const cooldowns = new Map();
+const states = new Map(); // bot message id -> quote state
 
-  let entries =
-    recentChatters.get(message.channel.id) || [];
-
-  entries.push({
-    userId: message.author.id,
-    timestamp: now
-  });
-
-  entries = entries.filter(
-    e => now - e.timestamp <= AUTO_SLOWMODE_WINDOW_MS
-  );
-
-  recentChatters.set(
-    message.channel.id,
-    entries
-  );
-
-  const uniqueUsers =
-    new Set(entries.map(e => e.userId)).size;
-
-  const isSlowmodeOn =
-    slowmodeState.get(message.channel.id) || false;
-
-  try {
-    if (
-      uniqueUsers >= AUTO_SLOWMODE_USER_THRESHOLD &&
-      !isSlowmodeOn
-    ) {
-      await message.channel.setRateLimitPerUser(
-        AUTO_SLOWMODE_SECONDS,
-        `Auto-slowmode: ${uniqueUsers} unique chatters in the last ${AUTO_SLOWMODE_WINDOW_MS / 1000}s`
-      );
-
-      slowmodeState.set(
-        message.channel.id,
-        true
-      );
-
-    } else if (
-      uniqueUsers < AUTO_SLOWMODE_USER_THRESHOLD &&
-      isSlowmodeOn
-    ) {
-      await message.channel.setRateLimitPerUser(
-        0,
-        `Auto-slowmode: activity dropped to ${uniqueUsers} unique chatters in the last ${AUTO_SLOWMODE_WINDOW_MS / 1000}s`
-      );
-
-      slowmodeState.set(
-        message.channel.id,
-        false
-      );
+// -------------------------------------------------------------- drawing
+function wrapLines(ctx, text, maxWidth) {
+  const lines = [];
+  for (const para of text.split('\n')) {
+    const words = para.split(/\s+/).filter(Boolean);
+    let line = '';
+    for (const word of words) {
+      const test = line ? `${line} ${word}` : word;
+      if (ctx.measureText(test).width > maxWidth && line) {
+        lines.push(line);
+        line = word;
+      } else {
+        line = test;
+      }
     }
-  } catch (err) {
-    console.error("Auto-slowmode error:", err);
+    lines.push(line);
   }
+  return lines.length ? lines : [''];
 }
 
-(async () => {
-  try {
-    await fs.access(WARN_FILE);
-  } catch {
-    await fs.writeFile(
-      WARN_FILE,
-      "{}",
-      "utf8"
-    );
-  }
-})();
-
-async function getWarnings() {
-  try {
-    const data = await fs.readFile(
-      WARN_FILE,
-      "utf8"
-    );
-
-    return JSON.parse(data);
-  } catch (error) {
-    console.error(
-      "Error reading warnings:",
-      error
-    );
-
-    return {};
-  }
+function fontStr({ italic, bold, size, family }) {
+  return `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}${size}px "${family}", sans-serif`;
 }
 
-async function saveWarnings(data) {
-  try {
-    await fs.writeFile(
-      WARN_FILE,
-      JSON.stringify(data, null, 2),
-      "utf8"
-    );
-  } catch (error) {
-    console.error(
-      "Error saving warnings:",
-      error
-    );
+async function render(state, botName) {
+  const theme = THEMES[state.themeKey] || THEMES.bw;
+  const family = (FONT_DEFS[state.fontKey] || FONT_DEFS[DEFAULT_FONT]).family;
+  const bg = hexToRgb(theme.bg);
+  const fg = hexToRgb(theme.fg);
+  const bgStr = bg.join(',');
+  const fgStr = fg.join(',');
+
+  const canvas = createCanvas(W, H);
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = theme.bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // ---- avatar: square, full card height, on the left (or right when flipped)
+  const ax = state.flip ? W - H : 0;
+  const av = state.avatar;
+  const scale = Math.max(H / av.width, H / av.height);
+  const dw = av.width * scale;
+  const dh = av.height * scale;
+
+  const tmp = createCanvas(H, H);
+  const tctx = tmp.getContext('2d');
+  tctx.drawImage(av, (H - dw) / 2, (H - dh) / 2, dw, dh);
+
+  const bright = BRIGHTNESS[state.brightness % BRIGHTNESS.length];
+  if (!state.color || bright !== 1) {
+    const img = tctx.getImageData(0, 0, H, H);
+    const px = img.data;
+    for (let i = 0; i < px.length; i += 4) {
+      let r = px[i];
+      let g = px[i + 1];
+      let b = px[i + 2];
+      if (!state.color) r = g = b = r * 0.299 + g * 0.587 + b * 0.114;
+      px[i] = Math.min(255, r * bright);
+      px[i + 1] = Math.min(255, g * bright);
+      px[i + 2] = Math.min(255, b * bright);
+    }
+    tctx.putImageData(img, 0, 0);
   }
+  ctx.drawImage(tmp, ax, 0);
+
+  // ---- fade the avatar into the background
+  const fadeFrom = state.flip ? W - H * 0.4 : H * 0.4;
+  const fadeTo = state.flip ? W - H * 0.9 : H * 0.9;
+  const fade = ctx.createLinearGradient(fadeFrom, 0, fadeTo, 0);
+  fade.addColorStop(0, `rgba(${bgStr},0)`);
+  fade.addColorStop(1, `rgba(${bgStr},1)`);
+  ctx.fillStyle = fade;
+  ctx.fillRect(ax, 0, H, H);
+
+  // ---- quote text (auto-shrinks to fit)
+  const cx = state.flip ? W * 0.28 : W * 0.715;
+  const boxW = 520;
+  const maxTextH = 290;
+
+  let size = 58;
+  let lines;
+  let lineH;
+  do {
+    ctx.font = fontStr({ italic: state.italic, bold: state.bold, size, family });
+    lines = wrapLines(ctx, state.text, boxW);
+    lineH = size * 1.2;
+    if (lines.length * lineH <= maxTextH) break;
+    size -= 2;
+  } while (size >= 20);
+
+  const quoteH = lines.length * lineH;
+  const authorH = 30;
+  const handleH = 22;
+  const gap1 = 22;
+  const gap2 = 4;
+  const total = quoteH + gap1 + authorH + gap2 + handleH;
+  const y0 = H * 0.5 - total / 2 + 8;
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = theme.fg;
+  ctx.font = fontStr({ italic: state.italic, bold: state.bold, size, family });
+  lines.forEach((l, i) => ctx.fillText(l, cx, y0 + i * lineH));
+
+  // author: "- NAME" (upper-case, italic) + @handle
+  ctx.fillStyle = theme.fg;
+  ctx.font = fontStr({ italic: true, bold: false, size: 25, family });
+  ctx.letterSpacing = '2px';
+  ctx.fillText(`- ${state.displayName.toUpperCase()}`, cx, y0 + quoteH + gap1);
+  ctx.letterSpacing = '0px';
+
+  ctx.fillStyle = `rgba(${fgStr},0.62)`;
+  ctx.font = fontStr({ italic: false, bold: false, size: 20, family });
+  ctx.fillText(`@${state.username}`, cx, y0 + quoteH + gap1 + authorH + gap2);
+
+  // watermark, bottom right
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = `rgba(${fgStr},0.55)`;
+  ctx.font = fontStr({ italic: false, bold: false, size: 22, family });
+  ctx.fillText(botName, W - 18, H - 16);
+
+  return canvas;
 }
 
-function makeCard(
-  color,
-  text,
-  user = null
-) {
-  return createCard({
-    color,
-    content: text,
-    avatarURL: getAvatarURL(user),
-    avatarDescription: user
-      ? "User avatar"
-      : "Pixel Villa Support"
-  });
+function encode(canvas, format) {
+  if (format === 'gif') {
+    const { data } = canvas.getContext('2d').getImageData(0, 0, W, H);
+    const palette = quantize(data, 256);
+    const index = applyPalette(data, palette);
+    const gif = GIFEncoder();
+    gif.writeFrame(index, W, H, { palette });
+    gif.finish();
+    return Buffer.from(gif.bytes());
+  }
+  return canvas.toBuffer('image/png');
 }
 
-function cardReply(
-  color,
-  text,
-  user = null
-) {
+// ----------------------------------------------------------- components
+function buildComponents(state) {
+  const row1 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('quote:brightness').setEmoji('☀️').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('quote:color').setEmoji('🎨').setStyle(state.color ? ButtonStyle.Primary : ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('quote:flip').setEmoji('🔄').setStyle(state.flip ? ButtonStyle.Primary : ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('quote:bold').setLabel('B').setStyle(state.bold ? ButtonStyle.Primary : ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('quote:italic').setEmoji('🆕').setStyle(state.italic ? ButtonStyle.Primary : ButtonStyle.Secondary),
+  );
+
+  const row2 = new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId('quote:font')
+      .setPlaceholder('Font')
+      .addOptions(
+        availableFonts.map((key) => ({
+          label: FONT_DEFS[key].label,
+          value: key,
+          default: state.fontKey === key,
+        })),
+      ),
+  );
+
+  const row3 = new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId('quote:theme')
+      .setPlaceholder('Theme')
+      .addOptions(
+        Object.entries(THEMES).map(([key, t]) => ({
+          label: t.label,
+          value: key,
+          emoji: t.emoji,
+          default: state.themeKey === key,
+        })),
+      ),
+  );
+
+  const row4 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('quote:remove').setLabel('Remove my Quote').setEmoji('🗑️').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder()
+      .setCustomId('quote:format')
+      .setLabel(state.format === 'gif' ? 'to PNG' : 'to GIF')
+      .setEmoji('🖼️')
+      .setStyle(ButtonStyle.Secondary),
+  );
+
+  return [row1, row2, row3, row4];
+}
+
+async function buildPayload(state, botName) {
+  const canvas = await render(state, botName);
+  const name = state.format === 'gif' ? 'quote.gif' : 'quote.png';
   return {
-    components: [
-      makeCard(color, text, user)
-    ],
-    flags: MessageFlags.IsComponentsV2
+    files: [new AttachmentBuilder(encode(canvas, state.format), { name })],
+    components: buildComponents(state),
   };
 }
 
-function hasModPermission(member) {
-  return member.permissions.has(
-    PermissionsBitField.Flags.ModerateMembers
-  );
-}
+// ---------------------------------------------------------------- module
+module.exports = (client) => {
+  const botName = () => client.user?.username || 'Pixel Villa';
 
-function hierarchyCheck(
-  message,
-  target
-) {
-  if (
-    target.id === message.author.id
-  ) {
-    return false;
-  }
+  setInterval(() => {
+    const now = Date.now();
+    for (const [id, s] of states) if (now - s.createdAt > STATE_TTL_MS) states.delete(id);
+  }, 10 * 60 * 1000).unref();
 
-  if (
-    !message.member.roles.highest ||
-    !target.roles.highest
-  ) {
-    return true;
-  }
-
-  return (
-    target.roles.highest.position <
-    message.member.roles.highest.position
-  );
-}
-
-function ms(time) {
-  if (!time) return null;
-
-  const number = parseInt(
-    time,
-    10
-  );
-
-  if (isNaN(number)) return null;
-
-  if (time.endsWith("s")) {
-    return number * 1000;
-  }
-
-  if (time.endsWith("m")) {
-    return number * 60000;
-  }
-
-  if (time.endsWith("h")) {
-    return number * 3600000;
-  }
-
-  if (time.endsWith("d")) {
-    return number * 86400000;
-  }
-
-  return null;
-}
-
-async function sendLog(
-  guild,
-  options
-) {
-  if (!config.LOG_CHANNEL_ID) return;
-
-  try {
-    const channel =
-      guild.channels.cache.get(
-        config.LOG_CHANNEL_ID
-      ) ||
-      await guild.channels
-        .fetch(config.LOG_CHANNEL_ID)
-        .catch(() => null);
-
-    if (
-      channel &&
-      channel.isTextBased()
-    ) {
-      await channel.send(options);
-    }
-  } catch (err) {
-    console.error(
-      "Failed to send log:",
-      err
-    );
-  }
-}
-
-client.once(
-  "clientReady",
-  async () => {
-    console.log(
-      `${client.user.tag} is online and fully optimized!`
-    );
-
-    client.user.setPresence({
-      activities: [
-        {
-          name: "Pixel Villa Support",
-          type: ActivityType.Streaming,
-          url: "https://www.twitch.tv/discord"
-        }
-      ],
-      status: "dnd"
-    });
-
-    for (
-      const guild of client.guilds.cache.values()
-    ) {
-      if (
-        !ALLOWED_SERVER_IDS.includes(
-          guild.id
-        )
-      ) {
-        console.log(
-          `Leaving unauthorized server: ${guild.name}`
-        );
-
-        await guild.leave().catch(err =>
-          console.error(
-            `Failed to leave ${guild.name}:`,
-            err
-          )
-        );
-      }
-    }
-
-    await registerSlashCommands();
-  }
-);
-
-client.on(
-  "guildCreate",
-  async guild => {
-    if (
-      !ALLOWED_SERVER_IDS.includes(
-        guild.id
-      )
-    ) {
-      console.log(
-        `Leaving unauthorized server: ${guild.name}`
-      );
-
-      await guild.leave().catch(err =>
-        console.error(
-          `Failed to leave ${guild.name}:`,
-          err
-        )
-      );
-    }
-  }
-);
-
-client.on(
-  "interactionCreate",
-  async interaction => {
-    if (
-      !interaction.isChatInputCommand()
-    ) {
-      return;
-    }
-
-    if (
-      interaction.commandName === "ping"
-    ) {
-      await interaction.reply(
-        `🏓 Pong! Latency: ${client.ws.ping}ms`
-      );
-    }
-  }
-);
-
-client.on(
-  "messageCreate",
-  async message => {
-    if (
-      message.author.bot ||
-      !message.guild
-    ) {
-      return;
-    }
-
-    await handleAutoSlowmode(message);
-
-    const rawContent =
-      message.content.trim();
-
-    const words =
-      rawContent.split(/ +/);
-
-    const firstWord =
-      words[0].toLowerCase();
-
-    let command = "";
-    let args = [];
-
-    if (
-      firstWord === "purge" ||
-      firstWord === "vcp"
-    ) {
-      command = firstWord;
-      args = words.slice(1);
-
-    } else if (
-      rawContent.startsWith(PREFIX)
-    ) {
-      args =
-        rawContent
-          .slice(PREFIX.length)
-          .trim()
-          .split(/ +/);
-
-      command =
-        args.shift().toLowerCase();
-
-    } else {
-      return;
-    }
-
+  // .quote (as a reply to a message)
+  client.on('messageCreate', async (message) => {
     try {
+      if (message.author.bot || !message.guild) return;
+      if (message.content.trim().toLowerCase() !== TRIGGER) return;
 
-      if (command === "testembed") {
-        const container =
-          new ContainerBuilder()
-            .setAccentColor(0x38BDF8)
-
-            .addTextDisplayComponents(
-              new TextDisplayBuilder()
-                .setContent(
-                  "# PIXEL VILLA\n" +
-                  "### Support System"
-                )
-            )
-
-            .addSeparatorComponents(
-              new SeparatorBuilder()
-            )
-
-            .addTextDisplayComponents(
-              new TextDisplayBuilder()
-                .setContent(
-                  "**Square UI Test**\n\n" +
-                  "This is a test of the new Pixel Villa card-style interface.\n\n" +
-                  "**Theme:** Sky Blue\n" +
-                  "**Style:** Components V2"
-                )
-            )
-
-            .addSeparatorComponents(
-              new SeparatorBuilder()
-            )
-
-            .addTextDisplayComponents(
-              new TextDisplayBuilder()
-                .setContent(
-                  "-# Pixel Villa Support"
-                )
-            );
-
+      if (!message.reference?.messageId) {
         return message.reply({
-          components: [container],
-          flags:
-            MessageFlags.IsComponentsV2
+          content: 'Reply to a message with `.quote` to quote it.',
+          allowedMentions: { repliedUser: false },
         });
       }
 
-      if (command === "minigames") {
-        await hubCommand.execute(
-          message,
-          args
-        );
+      const last = cooldowns.get(message.author.id) || 0;
+      if (Date.now() - last < COOLDOWN_MS) return;
+      cooldowns.set(message.author.id, Date.now());
 
-        return;
+      const target = await message.channel.messages.fetch(message.reference.messageId).catch(() => null);
+      if (!target) return;
+
+      const text = (target.cleanContent || '')
+        .replace(/<a?:(\w+):\d+>/g, ':$1:')
+        .trim();
+      if (!text) {
+        return message.reply({
+          content: 'That message has no text to quote.',
+          allowedMentions: { repliedUser: false },
+        });
       }
 
-      if (command === "stopgame") {
-        if (
-          !message.member.permissions.has(
-            PermissionsBitField.Flags.ManageMessages
-          )
-        ) {
-          return message.reply(
-            cardReply(
-              COLORS.RED,
-              "❌ You need **Manage Messages** permissions to force-stop a game."
-            )
-          );
-        }
+      const member = await message.guild.members.fetch(target.author.id).catch(() => null);
+      const displayName = member?.displayName || target.author.globalName || target.author.username;
+      const avatarURL = (member || target.author).displayAvatarURL({
+        extension: 'png',
+        size: 1024,
+        forceStatic: true,
+      });
 
-        const gameManager =
-          require(
-            "./minigames/utils/GameManager"
-          );
+      const state = {
+        text: text.slice(0, MAX_CHARS),
+        displayName,
+        username: target.author.username,
+        avatar: await loadImage(avatarURL),
+        themeKey: 'bw',
+        fontKey: DEFAULT_FONT,
+        color: false,
+        flip: false,
+        bold: false,
+        italic: false,
+        brightness: 0,
+        format: 'png',
+        requesterId: message.author.id,
+        createdAt: Date.now(),
+      };
 
-        if (
-          gameManager.isGameRunning(
-            message.channel.id
-          )
-        ) {
-          gameManager.deleteGame(
-            message.channel.id
-          );
-
-          return message.reply(
-            cardReply(
-              COLORS.GREEN,
-              "🛑 The active game lobby has been forcefully closed and the channel is now unlocked."
-            )
-          );
-        } else {
-          return message.reply(
-            cardReply(
-              COLORS.RED,
-              "ℹ️ There are no active minigames running in this channel right now."
-            )
-          );
-        }
-      }
-
-      if (command === "mute") {
-        const user =
-          message.mentions.members.first();
-
-        const time = args[1];
-
-        const reason =
-          args.slice(2).join(" ") ||
-          "No reason provided";
-
-        if (
-          !user ||
-          !time ||
-          !ms(time)
-        ) {
-          return message.reply(
-            cardReply(
-              COLORS.RED,
-              `**Usage:** ${PREFIX}mute @user [time: 10m/1h] [reason]`
-            )
-          );
-        }
-
-        if (
-          !hasModPermission(
-            message.member
-          )
-        ) {
-          return message.reply(
-            cardReply(
-              COLORS.RED,
-              "You need the **Moderate Members** permission."
-            )
-          );
-        }
-
-        if (
-          !hierarchyCheck(
-            message,
-            user
-          )
-        ) {
-          return message.reply(
-            cardReply(
-              COLORS.RED,
-              "You cannot mute this user due to role hierarchy."
-            )
-          );
-        }
-
-        await user.timeout(
-          ms(time),
-          reason
-        );
-
-        const options =
-          cardReply(
-            COLORS.RED,
-            `**${user.user.tag}** has been muted.\n\n**Duration:** ${time}\n**Reason:** ${reason}\n**Moderator:** ${message.author.tag}`,
-            user
-          );
-
-        await message.reply(
-          options
-        );
-
-        await sendLog(
-          message.guild,
-          options
-        );
-      }
-
-      if (command === "unmute") {
-        const user =
-          message.mentions.members.first();
-
-        if (!user) {
-          return message.reply(
-            cardReply(
-              COLORS.RED,
-              `**Usage:** \`${PREFIX}unmute @user\``
-            )
-          );
-        }
-
-        if (
-          !hasModPermission(
-            message.member
-          )
-        ) {
-          return message.reply(
-            cardReply(
-              COLORS.RED,
-              "You need the **Moderate Members** permission."
-            )
-          );
-        }
-
-        if (
-          !user.isCommunicationDisabled()
-        ) {
-          return message.reply(
-            cardReply(
-              COLORS.RED,
-              "That user is not currently muted."
-            )
-          );
-        }
-
-        if (!user.moderatable) {
-          return message.reply(
-            cardReply(
-              COLORS.RED,
-              "I can't unmute that user — their role is higher than mine."
-            )
-          );
-        }
-
-        const wasMutedUntil =
-          user.communicationDisabledUntilTimestamp;
-
-        try {
-          await user.timeout(
-            null,
-            `Unmuted by ${message.author.tag}`
-          );
-        } catch (err) {
-          console.error(
-            "Unmute failed:",
-            err
-          );
-
-          return message.reply(
-            cardReply(
-              COLORS.RED,
-              "Failed to unmute that user — check my role position and permissions."
-            )
-          );
-        }
-
-        const options =
-          cardReply(
-            COLORS.GREEN,
-            `# Member Unmuted\n\n` +
-            `**User**\n${user}\n\n` +
-            `**Moderator**\n${message.author}\n\n` +
-            (
-              wasMutedUntil
-                ? `**Was Muted Until**\n<t:${Math.floor(wasMutedUntil / 1000)}:R>\n\n`
-                : ""
-            ) +
-            `-# Pixel Villa Moderation`,
-            user
-          );
-
-        await message.reply(
-          options
-        );
-
-        await sendLog(
-          message.guild,
-          options
-        );
-      }
-
-      if (
-        ["purge", "c"].includes(
-          command
-        )
-      ) {
-        if (
-          !message.member.permissions.has(
-            PermissionsBitField.Flags.ManageMessages
-          )
-        ) {
-          return message.reply(
-            cardReply(
-              COLORS.RED,
-              "You need the **Manage Messages** permission."
-            )
-          );
-        }
-
-        const amount =
-          Number(args[0]);
-
-        if (
-          !amount ||
-          amount < 1 ||
-          amount > 100
-        ) {
-          return message.reply(
-            cardReply(
-              COLORS.RED,
-              "Please enter a valid amount between 1 and 100. (e.g., `purge 50`)"
-            )
-          );
-        }
-
-        await message.delete()
-          .catch(() => {});
-
-        await message.channel.bulkDelete(
-          amount,
-          true
-        );
-
-        const options =
-          cardReply(
-            COLORS.GREEN,
-            `Successfully deleted **${amount}** messages.\n\n**Moderator:** ${message.author.tag}`
-          );
-
-        const successMsg =
-          await message.channel.send(
-            options
-          );
-
-        setTimeout(
-          () =>
-            successMsg
-              .delete()
-              .catch(() => {}),
-          4000
-        );
-      }
-
-      if (command === "vcp") {
-        const search =
-          args.join(" ")
-            .trim()
-            .toLowerCase();
-
-        const user =
-          message.mentions.members.first() ||
-          message.guild.members.cache.get(
-            search
-          ) ||
-          message.guild.members.cache.find(
-            member =>
-              member.user.username
-                .toLowerCase()
-                .includes(search)
-          ) ||
-          message.guild.members.cache.find(
-            member =>
-              member.displayName
-                .toLowerCase()
-                .includes(search)
-          );
-
-        if (!user) {
-          return message.reply(
-            cardReply(
-              COLORS.RED,
-              "Please mention a valid user or provide part of their username/display name. (e.g., `vcp @user`, `vcp Celestial`, or `vcp cele`)"
-            )
-          );
-        }
-
-        if (
-          !message.member.permissions.has(
-            PermissionsBitField.Flags.MoveMembers
-          )
-        ) {
-          return message.reply(
-            cardReply(
-              COLORS.RED,
-              "You need the **Move Members** permission."
-            )
-          );
-        }
-
-        const voiceChannel =
-          message.member.voice.channel;
-
-        if (!voiceChannel) {
-          return message.reply(
-            cardReply(
-              COLORS.RED,
-              "You must be sitting inside a voice channel to pull someone."
-            )
-          );
-        }
-
-        if (!user.voice.channel) {
-          return message.reply(
-            cardReply(
-              COLORS.RED,
-              "That user isn't connected to any voice channel right now."
-            )
-          );
-        }
-
-        await user.voice.setChannel(
-          voiceChannel,
-          `Voice-pulled by ${message.author.tag}`
-        );
-
-        await message.reply(
-          cardReply(
-            COLORS.GREEN,
-            `Pulled **${user.user.tag}** into your voice channel.\n\n**Moderator:** ${message.author.tag}`,
-            user
-          )
-        );
-      }
-
-    } catch (error) {
-      console.error(
-        `Command Error Encountered (${command}):`,
-        error
-      );
-
-      message.reply(
-        cardReply(
-          COLORS.RED,
-          "Something went sideways while running that command."
-        )
-      ).catch(() => {});
+      const payload = await buildPayload(state, botName());
+      const sent = await message.reply({ ...payload, allowedMentions: { repliedUser: false } });
+      states.set(sent.id, state);
+    } catch (err) {
+      console.error('[quote] failed:', err);
     }
-  }
-);
+  });
 
-require("./firebase");
+  // buttons + menus
+  client.on('interactionCreate', async (interaction) => {
+    try {
+      if (!interaction.isButton() && !interaction.isStringSelectMenu()) return;
+      if (!interaction.customId.startsWith('quote:')) return;
 
-console.log("Loading help...");
-require("./help")(client);
+      const state = states.get(interaction.message.id);
+      if (!state) {
+        return interaction.reply({
+          content: 'This quote has expired, so make a new one with `.quote`.',
+          ephemeral: true,
+        });
+      }
 
-console.log("Loading badwords...");
-require("./badwords")(client);
+      const canEdit =
+        interaction.user.id === state.requesterId ||
+        interaction.memberPermissions?.has(PermissionFlagsBits.ManageMessages);
+      if (!canEdit) {
+        return interaction.reply({
+          content: 'Only the person who made this quote can edit it.',
+          ephemeral: true,
+        });
+      }
 
-console.log("Loading mod...");
-require("./mod")(client);
+      const action = interaction.customId.split(':')[1];
 
-console.log("Loading strike...");
-require("./strike")(client);  
+      if (action === 'remove') {
+        states.delete(interaction.message.id);
+        await interaction.message.delete().catch(() => {});
+        return interaction.deferUpdate().catch(() => {});
+      }
 
-console.log("Loading verify...");
-require("./verify")(client);
+      if (action === 'brightness') state.brightness = (state.brightness + 1) % BRIGHTNESS.length;
+      else if (action === 'color') state.color = !state.color;
+      else if (action === 'flip') state.flip = !state.flip;
+      else if (action === 'bold') state.bold = !state.bold;
+      else if (action === 'italic') state.italic = !state.italic;
+      else if (action === 'format') state.format = state.format === 'gif' ? 'png' : 'gif';
+      else if (action === 'font' && FONT_DEFS[interaction.values[0]]) state.fontKey = interaction.values[0];
+      else if (action === 'theme' && THEMES[interaction.values[0]]) state.themeKey = interaction.values[0];
 
-console.log("Loading misc...");
-require("./misc")(client);
+      await interaction.deferUpdate();
+      const payload = await buildPayload(state, botName());
+      await interaction.editReply({ ...payload, attachments: [] });
+    } catch (err) {
+      console.error('[quote] interaction failed:', err);
+    }
+  });
+};
 
-console.log("Loading voicesystem...");
-require("./voicesystem")(client);
-
-console.log("Loading qoute");
-require('./qoute')(client);
-
-console.log("Loading warn...");
-require("./warn")(client, {
-  getWarnings,
-  saveWarnings,
-  hasModPermission,
-  hierarchyCheck,
-  sendLog
-});
-
-console.log("Loading activetime...");
-require("./activetime")(client);
-
-console.log("Loading afk...");
-require("./afk")(client);
-
-console.log("Loading YouTube...");
-require("./YouTube")(client);
-
-console.log("About to login...");
-console.log(
-  "Token exists:",
-  !!config.TOKEN
-);
-
-client.login(config.TOKEN)
-  .then(() =>
-    console.log("✅ Login successful")
-  )
-  .catch(err =>
-    console.error(
-      "❌ Login failed:",
-      err
-    )
-  );
-
-const express = require("express");
-const app = express();
-
-app.get("/", (req, res) => {
-  res.send("Bot is running!");
-});
-
-const PORT =
-  process.env.PORT || 3000;
-
-app.listen(
-  PORT,
-  "0.0.0.0",
-  () => {
-    console.log(
-      `Keep-alive server is running on port ${PORT}`
-    );
-  }
-);
+// exposed for local testing only
+module.exports._test = { render, encode, availableFonts, THEMES, W, H };
