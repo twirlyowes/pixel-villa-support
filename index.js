@@ -885,7 +885,7 @@ require("./misc")(client);
 console.log("Loading voicesystem...");
 require("./voicesystem")(client);
 
-console.log("Loading qoute");
+console.log("Loading quote...");
 require('./quote')(client);
 
 console.log("Loading warn...");
