@@ -1018,61 +1018,220 @@ Staff names will now be shown to the user.`,
             }
 
             if (customId === "modmail_close") {
-                await interaction.deferUpdate().catch(() => {});
-
-                const channelId =
-                    interaction.channel.id;
-
-                const ticketRef =
-                    db.collection("modmail_tickets")
-                        .doc(channelId);
-
-                const ticketDoc =
-                    await ticketRef.get();
-
+                const channelId = interaction.channel.id;
+                const ticketRef = db.collection("modmail_tickets").doc(channelId);
+                const ticketDoc = await ticketRef.get();
                 if (!ticketDoc.exists) return;
 
-                const ticketData =
-                    ticketDoc.data();
-
+                const ticketData = ticketDoc.data();
                 if (ticketData.status !== "open") return;
 
-                const guild =
-                    interaction.guild;
-
+                const guild = interaction.guild;
                 if (!guild) return;
 
-                const member =
-                    await guild.members
-                        .fetch(interaction.user.id)
-                        .catch(() => null);
-
+                const member = await guild.members.fetch(interaction.user.id).catch(() => null);
                 if (!member) return;
 
-                const requiredRole =
-                    SUPPORT_ROLES[ticketData.category];
-
-                const isAdmin =
-                    member.permissions.has(
-                        PermissionFlagsBits.Administrator
-                    );
-
-                const hasSupportRole =
-                    requiredRole &&
-                    member.roles.cache.has(requiredRole);
+                const requiredRole = SUPPORT_ROLES[ticketData.category];
+                const isAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
+                const hasSupportRole = requiredRole && member.roles.cache.has(requiredRole);
 
                 if (!isAdmin && !hasSupportRole) {
-                    await interaction.followUp({
-                        content:
-                            "❌ You do not have the required support role to close this ticket.",
+                    await interaction.reply({
+                        content: "❌ You do not have the required support role to close this ticket.",
                         ephemeral: true
                     }).catch(() => {});
-
                     return;
                 }
 
-                const now =
-                    new Date().toISOString();
+                const formattedId = padTicketId(ticketData.ticketId);
+                const confirmationCard = createCard({
+                    color: COLORS.RED,
+                    content:
+                        "# 🔒 Close Support Ticket\n\n" +
+                        "Are you sure you want to close ticket **#" + formattedId + "**?\n\n" +
+                        "A transcript of this ticket will be generated and sent to the ModMail log channel before the ticket is deleted.\n\n" +
+                        "-# This action cannot be undone.",
+                    avatarURL: getAvatarURL(interaction.user),
+                    avatarDescription: interaction.user.username + "'s avatar"
+                });
+
+                const confirmationRow = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId("modmail_close_confirm")
+                        .setLabel("Confirm Close")
+                        .setStyle(ButtonStyle.Success)
+                        .setEmoji("🔒"),
+                    new ButtonBuilder()
+                        .setCustomId("modmail_close_cancel")
+                        .setLabel("Cancel")
+                        .setStyle(ButtonStyle.Danger)
+                        .setEmoji("✖️")
+                );
+
+                await interaction.update({
+                    components: [confirmationCard, confirmationRow],
+                    flags: MessageFlags.IsComponentsV2
+                }).catch(() => {});
+
+                return;
+            }
+
+            if (customId === "modmail_close_cancel") {
+                await interaction.deferUpdate().catch(() => {});
+
+                const channelId = interaction.channel.id;
+                const ticketDoc = await db.collection("modmail_tickets").doc(channelId).get();
+                if (!ticketDoc.exists) return;
+
+                const ticketData = ticketDoc.data();
+                if (ticketData.status !== "open") return;
+
+                const formattedId = padTicketId(ticketData.ticketId);
+                const categoryName = CATEGORY_NAMES[ticketData.category] || ticketData.category;
+                const ticketUser = await client.users.fetch(ticketData.userId).catch(() => null);
+
+                const ticketCard = createCard({
+                    color: COLORS.GREEN,
+                    content:
+                        "# 📨 Pixel Villa Support\n\n" +
+                        "**User**\n<@" + ticketData.userId + ">\n\n" +
+                        "**User ID**\n`" + ticketData.userId + "`\n\n" +
+                        "**Category**\n" + categoryName + "\n\n" +
+                        "**Ticket**\n#" + formattedId + "\n\n" +
+                        "**Status**\n🟢 Open\n\n" +
+                        "-# Ticket closure cancelled",
+                    avatarURL: ticketUser ? getAvatarURL(ticketUser) : getAvatarURL(client.user),
+                    avatarDescription: ticketUser ? ticketUser.username + "'s avatar" : "Pixel Villa Support avatar"
+                });
+
+                const actionRow = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId("modmail_close")
+                        .setLabel("Close Ticket")
+                        .setStyle(ButtonStyle.Danger)
+                        .setEmoji("🔒"),
+                    new ButtonBuilder()
+                        .setCustomId("modmail_claim")
+                        .setLabel("Claim Ticket")
+                        .setStyle(ButtonStyle.Primary)
+                        .setEmoji("🙋"),
+                    new ButtonBuilder()
+                        .setCustomId("modmail_hide_staff")
+                        .setLabel("Hide Staff Name")
+                        .setStyle(ButtonStyle.Secondary)
+                        .setEmoji("👤")
+                );
+
+                await interaction.message.edit({
+                    components: [ticketCard, actionRow],
+                    flags: MessageFlags.IsComponentsV2
+                }).catch(() => {});
+
+                return;
+            }
+
+            if (customId === "modmail_close_confirm") {
+                await interaction.deferUpdate().catch(() => {});
+
+                const channelId = interaction.channel.id;
+                const ticketRef = db.collection("modmail_tickets").doc(channelId);
+                const ticketDoc = await ticketRef.get();
+                if (!ticketDoc.exists) return;
+
+                const ticketData = ticketDoc.data();
+                if (ticketData.status !== "open") return;
+
+                const guild = interaction.guild;
+                if (!guild) return;
+
+                const member = await guild.members.fetch(interaction.user.id).catch(() => null);
+                if (!member) return;
+
+                const requiredRole = SUPPORT_ROLES[ticketData.category];
+                const isAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
+                const hasSupportRole = requiredRole && member.roles.cache.has(requiredRole);
+
+                if (!isAdmin && !hasSupportRole) {
+                    await interaction.followUp({
+                        content: "❌ You do not have the required support role to close this ticket.",
+                        ephemeral: true
+                    }).catch(() => {});
+                    return;
+                }
+
+                const now = new Date().toISOString();
+                const formattedId = padTicketId(ticketData.ticketId);
+                let transcript = "";
+                let transcriptMessageCount = 0;
+
+                try {
+                    const allMessages = [];
+                    let before;
+
+                    while (true) {
+                        const options = { limit: 100 };
+                        if (before) options.before = before;
+                        const batch = await interaction.channel.messages.fetch(options);
+                        if (!batch.size) break;
+                        allMessages.push(...batch.values());
+                        before = batch.last().id;
+                        if (batch.size < 100) break;
+                    }
+
+                    allMessages.reverse();
+
+                    const lines = [
+                        "Pixel Villa Support • ModMail Transcript",
+                        "==========================================",
+                        "Ticket: #" + formattedId,
+                        "Channel: " + interaction.channel.name,
+                        "User ID: " + ticketData.userId,
+                        "Category: " + (CATEGORY_NAMES[ticketData.category] || ticketData.category),
+                        "Created: " + ticketData.createdAt,
+                        "Closed: " + now,
+                        "Closed By: " + interaction.user.tag + " (" + interaction.user.id + ")",
+                        "",
+                        "Messages",
+                        "--------",
+                        ""
+                    ];
+
+                    for (const msg of allMessages) {
+                        transcriptMessageCount++;
+                        const timestamp = msg.createdAt ? new Date(msg.createdAt).toISOString() : "Unknown time";
+                        const author = (msg.author?.tag || msg.author?.username || "Unknown User") + " (" + (msg.author?.id || "unknown") + ")";
+                        const msgContent = msg.content || "[No text content]";
+
+                        lines.push("[" + timestamp + "] " + author, msgContent);
+
+                        if (msg.attachments?.size) {
+                            for (const attachment of msg.attachments.values()) {
+                                lines.push("Attachment: " + (attachment.name || "file"), "URL: " + attachment.url);
+                            }
+                        }
+
+                        lines.push("");
+                    }
+
+                    lines.push("--------", "Total messages: " + transcriptMessageCount);
+                    transcript = lines.join("\n");
+                } catch (error) {
+                    console.error("ModMail transcript generation error:", error);
+                    transcript = [
+                        "Pixel Villa Support • ModMail Transcript",
+                        "==========================================",
+                        "Ticket: #" + formattedId,
+                        "User ID: " + ticketData.userId,
+                        "Category: " + (CATEGORY_NAMES[ticketData.category] || ticketData.category),
+                        "Created: " + ticketData.createdAt,
+                        "Closed: " + now,
+                        "Closed By: " + interaction.user.tag + " (" + interaction.user.id + ")",
+                        "",
+                        "Transcript generation encountered an error.",
+                        "Please check the Render logs for details."
+                    ].join("\n");
+                }
 
                 await ticketRef.update({
                     status: "closed",
@@ -1080,29 +1239,19 @@ Staff names will now be shown to the user.`,
                     closedBy: interaction.user.id
                 });
 
-                const formattedId =
-                    padTicketId(ticketData.ticketId);
-
-                const ticketUser =
-                    await client.users
-                        .fetch(ticketData.userId)
-                        .catch(() => null);
+                const ticketUser = await client.users.fetch(ticketData.userId).catch(() => null);
 
                 if (ticketUser) {
-                    const closeCard =
-                        createCard({
-                            color: COLORS.RED,
-                            content:
-`# 🔒 Support Ticket Closed
-
-Your Pixel Villa Support ticket **#${formattedId}** has been closed.
-
-If you need further assistance, you can send the bot a new DM.`,
-                            avatarURL:
-                                getAvatarURL(interaction.user),
-                            avatarDescription:
-                                `${interaction.user.username}'s avatar`
-                        });
+                    const closeCard = createCard({
+                        color: COLORS.RED,
+                        content:
+                            "# 🔒 Support Ticket Closed\n\n" +
+                            "Your Pixel Villa Support ticket **#" + formattedId + "** has been closed.\n\n" +
+                            "A transcript has been saved to the support team's ModMail logs.\n\n" +
+                            "If you need further assistance, you can send the bot a new DM.",
+                        avatarURL: getAvatarURL(interaction.user),
+                        avatarDescription: interaction.user.username + "'s avatar"
+                    });
 
                     await ticketUser.send({
                         components: [closeCard],
@@ -1110,49 +1259,49 @@ If you need further assistance, you can send the bot a new DM.`,
                     }).catch(() => {});
                 }
 
-                const logsChannel =
-                    await client.channels
-                        .fetch(LOGS_CHANNEL_ID)
-                        .catch(() => null);
+                const logsChannel = await client.channels.fetch(LOGS_CHANNEL_ID).catch(() => null);
 
                 if (logsChannel) {
-                    const closeLogCard =
-                        createCard({
-                            color: COLORS.RED,
-                            content:
-`# 🔒 Ticket Closed
+                    const closeLogCard = createCard({
+                        color: COLORS.RED,
+                        content:
+                            "# 🔒 Ticket Closed\n\n" +
+                            "**Ticket:** #" + formattedId + "\n" +
+                            "**User:** <@" + ticketData.userId + ">\n" +
+                            "**User ID:** `" + ticketData.userId + "`\n" +
+                            "**Closed By:** " + interaction.user.tag + "\n" +
+                            "**Closed By ID:** `" + interaction.user.id + "`\n" +
+                            "**Created:** " + ticketData.createdAt + "\n" +
+                            "**Closed:** " + now + "\n" +
+                            "**Transcript Messages:** " + transcriptMessageCount,
+                        avatarURL: getAvatarURL(interaction.user),
+                        avatarDescription: interaction.user.username + "'s avatar"
+                    });
 
-**Ticket:** #${formattedId}
-**User:** <@${ticketData.userId}>
-**User ID:** \`${ticketData.userId}\`
-**Closed By:** ${interaction.user.tag}
-**Closed By ID:** \`${interaction.user.id}\`
-**Created:** ${ticketData.createdAt}
-**Closed:** ${now}`,
-                            avatarURL:
-                                getAvatarURL(interaction.user),
-                            avatarDescription:
-                                `${interaction.user.username}'s avatar`
-                        });
+                    const transcriptFile = new AttachmentBuilder(
+                        Buffer.from(transcript, "utf8"),
+                        { name: "modmail-" + formattedId + "-transcript.txt" }
+                    );
 
                     await logsChannel.send({
                         components: [closeLogCard],
+                        files: [transcriptFile],
                         flags: MessageFlags.IsComponentsV2
-                    }).catch(() => {});
+                    }).catch(async error => {
+                        console.error("ModMail transcript log send failed:", error);
+                        await logsChannel.send({
+                            content: "⚠️ Transcript upload failed for ticket #" + formattedId + ".",
+                            files: [transcriptFile]
+                        }).catch(() => {});
+                    });
                 }
 
-                const closingCard =
-                    createCard({
-                        color: COLORS.RED,
-                        content:
-`# 🔒 Ticket Closed
-
-This ticket will be deleted in **5 seconds**.`,
-                        avatarURL:
-                            getAvatarURL(interaction.user),
-                        avatarDescription:
-                            `${interaction.user.username}'s avatar`
-                    });
+                const closingCard = createCard({
+                    color: COLORS.RED,
+                    content: "# 🔒 Ticket Closed\n\nThis ticket will be deleted in **5 seconds**.",
+                    avatarURL: getAvatarURL(interaction.user),
+                    avatarDescription: interaction.user.username + "'s avatar"
+                });
 
                 await interaction.channel.send({
                     components: [closingCard],
@@ -1160,20 +1309,12 @@ This ticket will be deleted in **5 seconds**.`,
                 }).catch(() => {});
 
                 setTimeout(async () => {
-                    const channel =
-                        await client.channels
-                            .fetch(channelId)
-                            .catch(() => null);
-
-                    if (channel) {
-                        await channel.delete()
-                            .catch(() => {});
-                    }
+                    const channel = await client.channels.fetch(channelId).catch(() => null);
+                    if (channel) await channel.delete().catch(() => {});
                 }, 5000);
 
                 return;
             }
-
         } catch (error) {
             console.error(
                 "Error in ModMail interactionCreate handler:",
