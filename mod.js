@@ -53,6 +53,15 @@ module.exports = (client) => {
     return message.mentions.members.get(match[1]) || null;
   }
 
+  // Discord's native Audit Log attributes the action to the bot because
+  // the bot is the account performing the REST/API action. Include the
+  // human moderator in the reason so the Audit Log still identifies who
+  // requested the action.
+  function auditReason(message, reason = "No reason provided") {
+    const text = `${reason} | Action by: ${message.author.tag} (${message.author.id})`;
+    return text.length > 512 ? text.slice(0, 509) + "..." : text;
+  }
+
   async function sendLog(guild, options) {
     if (!config.LOG_CHANNEL_ID) return;
 
@@ -81,7 +90,6 @@ module.exports = (client) => {
     const command = args.shift().toLowerCase();
 
     try {
-
       // =========================================================
       // KICK
       // =========================================================
@@ -97,11 +105,8 @@ module.exports = (client) => {
           );
         }
 
-        // EXPLICIT @MENTION REQUIRED (reply-ping does NOT count)
         const user = getExplicitMentionedMember(message, args);
-
-        const reason =
-          args.slice(1).join(" ") || "No reason provided";
+        const reason = args.slice(1).join(" ") || "No reason provided";
 
         if (!user) {
           return message.reply(
@@ -133,14 +138,11 @@ module.exports = (client) => {
           );
         }
 
-        await user.kick(reason);
+        await user.kick(auditReason(message, reason));
 
         const options = cardReply(
           ORANGE,
-          `<:kick:1532337429426471044> **Member Kicked**
-
-**User:** ${user.user.tag} (\`${user.id}\`)
-**Reason:** ${reason}`,
+          `<:kick:1532337429426471044> **Member Kicked**\n\n**User:** ${user.user.tag} (${user.id})\n**Reason:** ${reason}`,
           message.author
         );
 
@@ -148,72 +150,67 @@ module.exports = (client) => {
         await sendLog(message.guild, options);
       }
 
-     // =========================================================
-// BAN
-// =========================================================
+      // =========================================================
+      // BAN
+      // =========================================================
 
-if (command === "ban") {
-  // Require Discord's Ban Members permission
-  if (!message.member.permissions.has(PermissionsBitField.Flags.BanMembers)) {
-    return message.reply(
-      cardReply(
-        COLORS.RED,
-        "<a:error:1532986765105696778> You don't have permission to use this command.",
-        message.author
-      )
-    );
-  }
+      if (command === "ban") {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.BanMembers)) {
+          return message.reply(
+            cardReply(
+              COLORS.RED,
+              "<a:error:1532986765105696778> You don't have permission to use this command.",
+              message.author
+            )
+          );
+        }
 
-  // EXPLICIT @MENTION REQUIRED (reply-ping does NOT count)
-  const user = getExplicitMentionedMember(message, args);
+        const user = getExplicitMentionedMember(message, args);
+        const reason = args.slice(1).join(" ") || "No reason provided";
 
-  const reason =
-    args.slice(1).join(" ") || "No reason provided";
+        if (!user) {
+          return message.reply(
+            cardReply(
+              WARNING_YELLOW,
+              `<a:Warning:1532986372716236932> **Usage:** \`${PREFIX}ban @user [reason]\`\n\nReplying to a message does **not** count — you must type the @mention.`,
+              message.author
+            )
+          );
+        }
 
-  if (!user) {
-    return message.reply(
-      cardReply(
-        WARNING_YELLOW,
-        `<a:Warning:1532986372716236932> **Usage:** \`${PREFIX}ban @user [reason]\`\n\nReplying to a message does **not** count — you must type the @mention.`,
-        message.author
-      )
-    );
-  }
+        if (!user.bannable) {
+          return message.reply(
+            cardReply(
+              COLORS.RED,
+              "<a:error:1532986765105696778> I cannot ban this user. They may have a higher role than me or have Administrator permissions.",
+              message.author
+            )
+          );
+        }
 
-  if (!user.bannable) {
-    return message.reply(
-      cardReply(
-        COLORS.RED,
-        "<a:error:1532986765105696778> I cannot ban this user. They may have a higher role than me or have Administrator permissions.",
-        message.author
-      )
-    );
-  }
+        if (!hierarchyCheck(message, user)) {
+          return message.reply(
+            cardReply(
+              COLORS.RED,
+              "<a:error:1532986765105696778> You cannot ban this user because they have an equal or higher role than you.",
+              message.author
+            )
+          );
+        }
 
-  if (!hierarchyCheck(message, user)) {
-    return message.reply(
-      cardReply(
-        COLORS.RED,
-        "<a:error:1532986765105696778> You cannot ban this user because they have an equal or higher role than you.",
-        message.author
-      )
-    );
-  }
+        await user.ban({
+          reason: auditReason(message, reason)
+        });
 
-  await user.ban({ reason });
+        const options = cardReply(
+          COLORS.RED,
+          `<a:ban:1532989769766801511> **Member Banned**\n\n**User:** ${user.user.tag} (${user.id})\n**Reason:** ${reason}`,
+          message.author
+        );
 
-  const options = cardReply(
-    COLORS.RED,
-    `<a:ban:1532989769766801511> **Member Banned**
-
-**User:** ${user.user.tag} (\`${user.id}\`)
-**Reason:** ${reason}`,
-    message.author
-  );
-
-  await message.reply(options);
-  await sendLog(message.guild, options);
-}
+        await message.reply(options);
+        await sendLog(message.guild, options);
+      }
 
       // =========================================================
       // NICK
@@ -230,9 +227,7 @@ if (command === "ban") {
           );
         }
 
-        // EXPLICIT @MENTION REQUIRED (reply-ping does NOT count)
         const user = getExplicitMentionedMember(message, args);
-
         const nickname = args.slice(1).join(" ");
 
         if (!user) {
@@ -265,7 +260,11 @@ if (command === "ban") {
           );
         }
 
-        await user.setNickname(nickname || null);
+        const reason = nickname
+          ? `Changed nickname to: ${nickname}`
+          : "Reset nickname";
+
+        await user.setNickname(nickname || null, auditReason(message, reason));
 
         const statusText = nickname
           ? `changed to **${nickname}**`
@@ -273,10 +272,7 @@ if (command === "ban") {
 
         const options = cardReply(
           COLORS.SKY_BLUE,
-          `**Nickname Updated**
-
-**User:** ${user.user.tag}
-**Nickname:** ${statusText}`,
+          `**Nickname Updated**\n\n**User:** ${user.user.tag}\n**Nickname:** ${statusText}`,
           message.author
         );
 
@@ -305,10 +301,7 @@ if (command === "ban") {
         await sent.edit(
           cardReply(
             COLORS.GREEN,
-            `<a:ONLINE:1532986890519711815> **Pong!**
-
-**Roundtrip Latency:** \`${latency}ms\`
-**API Latency:** \`${apiLatency}ms\``,
+            `<a:ONLINE:1532986890519711815> **Pong!**\n\n**Roundtrip Latency:** \`${latency}ms\`\n**API Latency:** \`${apiLatency}ms\``,
             message.author
           )
         );
@@ -332,13 +325,7 @@ if (command === "ban") {
         await message.reply(
           cardReply(
             BLURPLE,
-            `# Pixel Villa Uptime
-
-**I am online from** <t:${timestamp}:R>
-
-**Total Uptime:** ${days} days, ${hours} hours, ${minutes} minutes, ${seconds} seconds
-
-**Started:** <t:${timestamp}:F>`,
+            `# Pixel Villa Uptime\n\n**I am online from** <t:${timestamp}:R>\n\n**Total Uptime:** ${days} days, ${hours} hours, ${minutes} minutes, ${seconds} seconds\n\n**Started:** <t:${timestamp}:F>`,
             message.author
           )
         );
@@ -360,19 +347,17 @@ if (command === "ban") {
         }
 
         const channel = message.channel;
+        const reason = args.join(" ") || "No reason provided";
 
         await channel.permissionOverwrites.edit(
           message.guild.roles.everyone,
-          {
-            SendMessages: false
-          }
+          { SendMessages: false },
+          { reason: auditReason(message, reason) }
         );
 
         const options = cardReply(
           COLORS.RED,
-          `<:lock:1532337641494937651> **Channel Locked**
-
-**Channel:** ${channel}`,
+          `<:lock:1532337641494937651> **Channel Locked**\n\n**Channel:** ${channel}\n**Reason:** ${reason}`,
           message.author
         );
 
@@ -396,19 +381,17 @@ if (command === "ban") {
         }
 
         const channel = message.channel;
+        const reason = args.join(" ") || "No reason provided";
 
         await channel.permissionOverwrites.edit(
           message.guild.roles.everyone,
-          {
-            SendMessages: null
-          }
+          { SendMessages: null },
+          { reason: auditReason(message, reason) }
         );
 
         const options = cardReply(
           COLORS.GREEN,
-          `<:unlock:1532337553217294528> **Channel Unlocked**
-
-**Channel:** ${channel}`,
+          `<:unlock:1532337553217294528> **Channel Unlocked**\n\n**Channel:** ${channel}\n**Reason:** ${reason}`,
           message.author
         );
 
@@ -432,12 +415,13 @@ if (command === "ban") {
         }
 
         const userId = args[0];
+        const reason = args.slice(1).join(" ") || "No reason provided";
 
         if (!userId) {
           return message.reply(
             cardReply(
               WARNING_YELLOW,
-              `<a:Warning:1532986372716236932> **Usage:** \`${PREFIX}unban [User ID]\``,
+              `<a:Warning:1532986372716236932> **Usage:** \`${PREFIX}unban [User ID] [reason]\``,
               message.author
             )
           );
@@ -456,13 +440,14 @@ if (command === "ban") {
           );
         }
 
-        await message.guild.members.unban(userId);
+        await message.guild.members.unban(
+          userId,
+          auditReason(message, reason)
+        );
 
         const options = cardReply(
           COLORS.GREEN,
-          `<a:success:1532986625343099050> **Member Unbanned**
-
-**User:** ${banInfo.user.tag} (\`${banInfo.user.id}\`)`,
+          `<a:success:1532986625343099050> **Member Unbanned**\n\n**User:** ${banInfo.user.tag} (${banInfo.user.id})\n**Reason:** ${reason}`,
           message.author
         );
 
@@ -486,4 +471,3 @@ if (command === "ban") {
     }
   });
 };
-            
